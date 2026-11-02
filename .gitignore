@@ -31,3 +31,4 @@ bench/results/**/*.tmp
 
 # Local dev stack
 .dev/
+bench/results/latest/
