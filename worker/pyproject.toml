@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["grpcio-tools>=1.70", "pytest>=8", "pytest-asyncio>=0.24"]
+dev = ["grpcio-tools>=1.70", "numpy>=1.26", "pytest>=8", "pytest-asyncio>=0.24"]
 vllm = ["vllm>=0.31.0"]
 
 [project.scripts]
