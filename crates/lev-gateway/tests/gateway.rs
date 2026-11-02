@@ -865,3 +865,34 @@ async fn tenants_keys_and_usage_through_the_admin_api() {
             .any(|t| t["tenant"]["id"] == "globex")
     );
 }
+
+#[tokio::test]
+async fn audit_records_a_stage_timeline() {
+    let cluster = cluster(&one_worker(), |_| {}).await;
+    let (status, _) = post(
+        &cluster.app,
+        "/v1/chat/completions",
+        json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}], "thinking": {"type": "disabled"}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, requests) = get(&cluster.app, "/admin/requests?limit=1").await;
+    let names: Vec<&str> = requests["requests"][0]["timeline"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|stage| stage["name"].as_str().unwrap())
+        .collect();
+    for expected in [
+        "auth",
+        "parse",
+        "convert",
+        "render",
+        "tokenize",
+        "dispatch",
+        "worker.prefill",
+        "decode",
+    ] {
+        assert!(names.contains(&expected), "missing {expected} in {names:?}");
+    }
+}

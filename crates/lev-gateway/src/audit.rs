@@ -42,6 +42,9 @@ pub struct AuditEntry {
     pub error: Option<String>,
     pub spec_draft_tokens: u64,
     pub spec_accepted_tokens: u64,
+    /// Where the time went: gateway stages, the worker's queue and prefill,
+    /// decode, and the response tail.
+    pub timeline: Vec<crate::pipeline::Stage>,
     #[serde(skip)]
     pub replay: Option<ReplayInputs>,
     #[serde(skip)]

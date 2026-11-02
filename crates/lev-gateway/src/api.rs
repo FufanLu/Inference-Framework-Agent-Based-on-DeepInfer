@@ -65,6 +65,7 @@ where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
     ProtocolChunk<T>: serde::Serialize + Send,
 {
+    let received_at = std::time::Instant::now();
     let tenant = match pipeline::authenticate(&state, &headers).await {
         Ok(tenant) => tenant,
         Err(error) => return T::error_response(&error),
@@ -72,7 +73,7 @@ where
     if let Err(error) = pipeline::admit(&state, &tenant).await {
         return T::error_response(&error);
     }
-    match pipeline::prepare::<T>(&state, &headers, &body, tenant) {
+    match pipeline::prepare::<T>(&state, &headers, &body, tenant, received_at) {
         Ok(prepared) => pipeline::respond::<T>(state, prepared).await,
         Err(error) => {
             metrics::counter!(
@@ -181,7 +182,7 @@ fn inspect<T>(
 where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
 {
-    let prepared = pipeline::prepare::<T>(state, headers, body, tenant)?;
+    let prepared = pipeline::prepare::<T>(state, headers, body, tenant, std::time::Instant::now())?;
     let model = &prepared.model;
     let rendered = model.render(&prepared.request.conversation);
     let special: Vec<_> = rendered
@@ -245,6 +246,7 @@ where
         "block_size": block_size,
         "block_hashes": block_hashes,
         "tokens": tokens,
+        "timeline": prepared.timeline,
     }))
 }
 

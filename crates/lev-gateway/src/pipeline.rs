@@ -40,6 +40,23 @@ use crate::state::AppState;
 pub type ProtocolChunk<T> =
     <<<T as ProtocolRequest>::Response as ProtocolResponse>::ChunkGenerator as ChunkGenerator>::Chunk;
 
+/// One step of a request's timeline, relative to its arrival.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Stage {
+    pub name: &'static str,
+    pub start_ms: f64,
+    pub duration_ms: f64,
+}
+
+fn stage(name: &'static str, origin: Instant, start: Instant, end: Instant) -> Stage {
+    let ms = |d: Duration| d.as_secs_f64() * 1e3;
+    Stage {
+        name,
+        start_ms: ms(start.saturating_duration_since(origin)),
+        duration_ms: ms(end.saturating_duration_since(start)),
+    }
+}
+
 /// Fields read from the raw body before protocol parsing.
 #[derive(Debug, Default, Deserialize)]
 struct Envelope {
@@ -146,6 +163,9 @@ pub struct Prepared {
     pub generate: pb::GenerateRequest,
     pub received_at: Instant,
     pub received_at_ms: u64,
+    /// Gateway-side stages so far (authentication, parsing, conversion,
+    /// rendering, tokenization).
+    pub timeline: Vec<Stage>,
 }
 
 /// Parse, convert, render and tokenize a protocol request.
@@ -154,11 +174,14 @@ pub fn prepare<T>(
     headers: &HeaderMap,
     body: &[u8],
     tenant: Tenant,
+    received_at: Instant,
 ) -> Result<Prepared, ApiError>
 where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
 {
-    let received_at = Instant::now();
+    let mut timeline = Vec::with_capacity(8);
+    let start = Instant::now();
+    timeline.push(stage("auth", received_at, received_at, start));
     let envelope: Envelope = serde_json::from_slice(body)
         .map_err(|error| ApiError::bad_request("invalid_json", format!("invalid JSON: {error}")))?;
     let model_name = envelope
@@ -176,8 +199,14 @@ where
     let parsed: T = serde_json::from_slice(body).map_err(|error| {
         ApiError::bad_request("invalid_request_error", format!("invalid request: {error}"))
     })?;
+    let parsed_at = Instant::now();
+    timeline.push(stage("parse", received_at, start, parsed_at));
     let request = parsed.convert(model.options.clone())?;
+    let converted_at = Instant::now();
+    timeline.push(stage("convert", received_at, parsed_at, converted_at));
     let rendered = model.render(&request.conversation);
+    let rendered_at = Instant::now();
+    timeline.push(stage("render", received_at, converted_at, rendered_at));
     if !rendered.image_sources.is_empty() {
         return Err(ApiError::bad_request(
             "unsupported_feature",
@@ -189,6 +218,7 @@ where
         .map_err(|error| ApiError::internal(format!("tokenization failed: {error}")))?;
     let max_tokens =
         request.resolve_max_tokens(prompt_token_ids.len() as u32, model.context_limit)?;
+    timeline.push(stage("tokenize", received_at, rendered_at, Instant::now()));
 
     let request_id = Uuid::now_v7();
     let generate = generate_request(
@@ -210,6 +240,7 @@ where
         generate,
         received_at,
         received_at_ms: now_ms(),
+        timeline,
     })
 }
 
@@ -585,6 +616,7 @@ struct RecordState {
     finish_reason: Option<String>,
     error: Option<ApiError>,
     completed: bool,
+    timeline: Vec<Stage>,
 }
 
 /// Everything observed about one request. Finalized (metrics, audit log,
@@ -620,13 +652,38 @@ impl RequestRecord {
             },
             inner: Mutex::new(RecordState {
                 prompt_tokens: prepared.generate.prompt_token_ids.len() as u32,
+                timeline: prepared.timeline.clone(),
                 ..RecordState::default()
             }),
         })
     }
 
-    fn on_dispatched(&self, dispatched: &Dispatched) {
+    fn on_dispatched(&self, dispatched: &Dispatched, dispatch_started: Instant) {
+        let now = Instant::now();
         let mut inner = self.inner.lock();
+        let origin = self.received_at;
+        // The worker's own account of the request: queueing, then prefill.
+        let prefill = Duration::from_micros(dispatched.ready.prefill_time_us);
+        let queue = Duration::from_micros(dispatched.ready.queue_time_us);
+        let prefill_start = now
+            .checked_sub(prefill)
+            .unwrap_or(now)
+            .max(dispatch_started);
+        let queue_start = prefill_start
+            .checked_sub(queue)
+            .unwrap_or(prefill_start)
+            .max(dispatch_started);
+        inner
+            .timeline
+            .push(stage("dispatch", origin, dispatch_started, now));
+        if !queue.is_zero() {
+            inner
+                .timeline
+                .push(stage("worker.queue", origin, queue_start, prefill_start));
+        }
+        inner
+            .timeline
+            .push(stage("worker.prefill", origin, prefill_start, now));
         inner.worker_id = Some(dispatched.worker_id.clone());
         inner.prefill_worker_id = dispatched.prefill_worker_id.clone();
         inner.plan = serde_json::to_value(&dispatched.plan).ok();
@@ -679,8 +736,16 @@ impl RequestRecord {
 
 impl Drop for RequestRecord {
     fn drop(&mut self) {
-        let inner = std::mem::take(&mut *self.inner.lock());
+        let mut inner = std::mem::take(&mut *self.inner.lock());
         let now = Instant::now();
+        if let (Some(first), Some(last)) = (inner.first_token_at, inner.last_token_at) {
+            inner
+                .timeline
+                .push(stage("decode", self.received_at, first, last));
+            inner
+                .timeline
+                .push(stage("respond", self.received_at, last, now));
+        }
         let outcome: &'static str = if inner.error.is_some() {
             if inner.worker_id.is_none() {
                 "rejected"
@@ -794,6 +859,7 @@ impl Drop for RequestRecord {
             spec_accepted_tokens: inner.accepted_tokens,
             replay: Some(self.replay.clone()),
             output_token_ids: inner.output_token_ids,
+            timeline: inner.timeline,
         });
     }
 }
@@ -880,6 +946,7 @@ where
 {
     let record = RequestRecord::new(&state, &prepared);
     let request_id = prepared.request_id.to_string();
+    let dispatch_started = Instant::now();
     let dispatched = match dispatch(
         &state,
         DispatchInput {
@@ -898,7 +965,7 @@ where
             return with_request_id(T::error_response(&error), &request_id);
         }
     };
-    record.on_dispatched(&dispatched);
+    record.on_dispatched(&dispatched, dispatch_started);
 
     let Prepared {
         request,
