@@ -25,6 +25,10 @@ use serde::{Deserialize, Serialize};
 use tonic::{Code, Status, Streaming};
 use uuid::Uuid;
 
+use axum::http::StatusCode;
+use chrono::Utc;
+use lev_control::{AuthError, Tenant, Throttle, UsageRecord};
+
 use crate::audit::{AuditEntry, ReplayInputs};
 use crate::error::{ApiError, ErrorKind};
 use crate::events::{LiveEvent, now_ms};
@@ -67,11 +71,9 @@ impl Envelope {
     }
 }
 
-/// Resolve the tenant of a request from its API key.
-pub fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
-    if state.api_keys.is_empty() {
-        return Ok("anonymous".to_string());
-    }
+/// Resolve the tenant of a request from its API key
+/// (`Authorization: Bearer …` or Anthropic's `x-api-key`).
+pub async fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<Tenant, ApiError> {
     let key = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -81,15 +83,55 @@ pub fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<String, Api
                 .get("x-api-key")
                 .and_then(|value| value.to_str().ok())
         });
-    match key.and_then(|key| state.api_keys.get(key.trim())) {
-        Some(tenant) => Ok(tenant.clone()),
-        None => Err(ApiError::new(
-            axum::http::StatusCode::UNAUTHORIZED,
-            ErrorKind::Authentication,
-            "invalid_api_key",
-            "missing or invalid API key",
-        )),
-    }
+    state.control.authenticate(key).await.map_err(|error| {
+        let (status, kind, code) = match &error {
+            AuthError::Missing | AuthError::Invalid => (
+                StatusCode::UNAUTHORIZED,
+                ErrorKind::Authentication,
+                "invalid_api_key",
+            ),
+            AuthError::Disabled(_) => (
+                StatusCode::FORBIDDEN,
+                ErrorKind::PermissionDenied,
+                "tenant_disabled",
+            ),
+            AuthError::Unavailable(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorKind::Overloaded,
+                "control_plane_unavailable",
+            ),
+        };
+        ApiError::new(status, kind, code, error.to_string())
+    })
+}
+
+/// Admit a request under its tenant's rate limits and quota.
+pub async fn admit(state: &AppState, tenant: &Tenant) -> Result<(), ApiError> {
+    state.control.admit(tenant).await.map_err(|throttle| {
+        metrics::counter!(
+            "lev_throttled_total",
+            "tenant" => tenant.id.clone(),
+            "reason" => match throttle {
+                Throttle::Requests { .. } => "rpm",
+                Throttle::Tokens { .. } => "tpm",
+                Throttle::Quota { .. } => "quota",
+            },
+        )
+        .increment(1);
+        let code = if matches!(throttle, Throttle::Quota { .. }) {
+            "insufficient_quota"
+        } else {
+            "rate_limit_exceeded"
+        };
+        let mut error = ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            ErrorKind::RateLimited,
+            code,
+            throttle.to_string(),
+        );
+        error.retry_after = throttle.retry_after();
+        error
+    })
 }
 
 /// A request that has been converted, rendered and tokenized.
@@ -98,7 +140,7 @@ pub struct Prepared {
     pub response_id: String,
     pub protocol: &'static str,
     pub model: Arc<ServedModel>,
-    pub tenant: String,
+    pub tenant: Tenant,
     pub session_key: Option<String>,
     pub request: ConversationRequest,
     pub generate: pb::GenerateRequest,
@@ -111,7 +153,7 @@ pub fn prepare<T>(
     state: &AppState,
     headers: &HeaderMap,
     body: &[u8],
-    tenant: String,
+    tenant: Tenant,
 ) -> Result<Prepared, ApiError>
 where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
@@ -155,7 +197,7 @@ where
         &request_id,
         prompt_token_ids,
         max_tokens,
-        &tenant,
+        &tenant.id,
     );
     Ok(Prepared {
         request_id,
@@ -554,7 +596,7 @@ pub struct RequestRecord {
     response_id: String,
     protocol: &'static str,
     model: String,
-    tenant: String,
+    tenant: Tenant,
     received_at: Instant,
     received_at_ms: u64,
     replay: ReplayInputs,
@@ -678,7 +720,7 @@ impl Drop for RequestRecord {
             metrics::histogram!("lev_tpot_seconds", "model" => model.clone())
                 .record(tpot.as_secs_f64());
         }
-        let tenant = self.tenant.clone();
+        let tenant = self.tenant.id.clone();
         metrics::counter!("lev_prompt_tokens_total", "model" => model.clone(), "tenant" => tenant.clone())
             .increment(u64::from(inner.prompt_tokens));
         metrics::counter!("lev_cached_tokens_total", "model" => model.clone(), "tenant" => tenant.clone())
@@ -694,7 +736,7 @@ impl Drop for RequestRecord {
         self.state.events.publish(LiveEvent::RequestDone {
             request_id: self.request_id.clone(),
             model: self.model.clone(),
-            tenant: self.tenant.clone(),
+            tenant: self.tenant.id.clone(),
             worker_id: inner.worker_id.clone(),
             outcome,
             prompt_tokens: inner.prompt_tokens,
@@ -704,6 +746,22 @@ impl Drop for RequestRecord {
             e2e_ms: ms(e2e),
             at_ms: now_ms(),
         });
+        if inner.worker_id.is_some()
+            && let Ok(runtime) = tokio::runtime::Handle::try_current()
+        {
+            let control = Arc::clone(&self.state.control);
+            let tenant = self.tenant.clone();
+            let record = UsageRecord {
+                tenant_id: tenant.id.clone(),
+                request_id: self.request_id.clone(),
+                model: self.model.clone(),
+                prompt_tokens: u64::from(inner.prompt_tokens),
+                cached_tokens: u64::from(inner.cached_tokens),
+                completion_tokens: u64::from(inner.completion_tokens),
+                at: Utc::now(),
+            };
+            runtime.spawn(async move { control.settle(&tenant, record).await });
+        }
         let seed = self
             .replay
             .generate
@@ -715,7 +773,7 @@ impl Drop for RequestRecord {
             response_id: self.response_id.clone(),
             protocol: self.protocol,
             model: self.model.clone(),
-            tenant: self.tenant.clone(),
+            tenant: self.tenant.id.clone(),
             received_at_ms: self.received_at_ms,
             policy: inner.policy.map(str::to_string),
             plan: inner.plan,

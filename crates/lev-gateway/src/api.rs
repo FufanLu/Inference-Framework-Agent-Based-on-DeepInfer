@@ -47,6 +47,11 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/requests/{id}", get(get_request))
         .route("/admin/requests/{id}/replay", post(replay_request))
         .route("/admin/live", get(live))
+        .route("/admin/tenants", get(list_tenants).post(upsert_tenant))
+        .route("/admin/tenants/{id}/keys", post(create_key))
+        .route("/admin/keys", get(list_keys))
+        .route("/admin/keys/{id}", axum::routing::delete(revoke_key))
+        .route("/admin/usage", get(usage))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -60,10 +65,13 @@ where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
     ProtocolChunk<T>: serde::Serialize + Send,
 {
-    let tenant = match pipeline::authenticate(&state, &headers) {
+    let tenant = match pipeline::authenticate(&state, &headers).await {
         Ok(tenant) => tenant,
         Err(error) => return T::error_response(&error),
     };
+    if let Err(error) = pipeline::admit(&state, &tenant).await {
+        return T::error_response(&error);
+    }
     match pipeline::prepare::<T>(&state, &headers, &body, tenant) {
         Ok(prepared) => pipeline::respond::<T>(state, prepared).await,
         Err(error) => {
@@ -145,13 +153,14 @@ async fn render(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(error) = pipeline::authenticate(&state, &headers) {
-        return (error.status, Json(error.openai_body())).into_response();
-    }
+    let tenant = match pipeline::authenticate(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(error) => return (error.status, Json(error.openai_body())).into_response(),
+    };
     let result = match query.protocol.as_deref().unwrap_or("chat_completions") {
-        "chat_completions" => inspect::<ChatCompletionRequest>(&state, &headers, &body),
-        "responses" => inspect::<ResponsesRequest>(&state, &headers, &body),
-        "messages" => inspect::<MessagesRequest>(&state, &headers, &body),
+        "chat_completions" => inspect::<ChatCompletionRequest>(&state, &headers, &body, tenant),
+        "responses" => inspect::<ResponsesRequest>(&state, &headers, &body, tenant),
+        "messages" => inspect::<MessagesRequest>(&state, &headers, &body, tenant),
         other => Err(ApiError::bad_request(
             "unknown_protocol",
             format!("unknown protocol `{other}`"),
@@ -167,11 +176,12 @@ fn inspect<T>(
     state: &AppState,
     headers: &HeaderMap,
     body: &[u8],
+    tenant: lev_control::Tenant,
 ) -> Result<serde_json::Value, ApiError>
 where
     T: ProtocolRequest + ProtocolInfo + DeserializeOwned,
 {
-    let prepared = pipeline::prepare::<T>(state, headers, body, "inspector".to_string())?;
+    let prepared = pipeline::prepare::<T>(state, headers, body, tenant)?;
     let model = &prepared.model;
     let rendered = model.render(&prepared.request.conversation);
     let special: Vec<_> = rendered
@@ -547,4 +557,144 @@ async fn live(State(state): State<AppState>, headers: HeaderMap) -> Response {
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     response
+}
+
+// ------------------------------------------------------------- tenants
+
+async fn list_tenants(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    match state.control.tenants_with_usage().await {
+        Ok(rows) => {
+            let tenants: Vec<_> = rows
+                .into_iter()
+                .map(|(tenant, usage)| json!({ "tenant": tenant, "usage_this_month": usage }))
+                .collect();
+            Json(json!({ "tenants": tenants })).into_response()
+        }
+        Err(error) => admin_error(ApiError::internal(error.to_string())),
+    }
+}
+
+async fn upsert_tenant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(tenant): Json<lev_control::Tenant>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    if tenant.id.is_empty() || tenant.id == "anonymous" {
+        return admin_error(ApiError::bad_request("invalid_tenant", "invalid tenant id"));
+    }
+    match state.control.upsert_tenant(&tenant).await {
+        Ok(()) => Json(json!({ "tenant": tenant })).into_response(),
+        Err(error) => admin_error(ApiError::internal(error.to_string())),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateKey {
+    #[serde(default = "default_key_name")]
+    name: String,
+}
+
+fn default_key_name() -> String {
+    "default".to_string()
+}
+
+/// Create an API key; the secret appears only in this response.
+async fn create_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Option<Json<CreateKey>>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    let name = body.map_or_else(default_key_name, |Json(body)| body.name);
+    match state.control.create_key(&id, &name).await {
+        Ok(created) => (StatusCode::CREATED, Json(created)).into_response(),
+        Err(error) => admin_error(ApiError::bad_request("invalid_tenant", error.to_string())),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct KeysQuery {
+    #[serde(default)]
+    tenant: Option<String>,
+}
+
+async fn list_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<KeysQuery>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    match state
+        .control
+        .store()
+        .list_keys(query.tenant.as_deref())
+        .await
+    {
+        Ok(keys) => Json(json!({ "keys": keys })).into_response(),
+        Err(error) => admin_error(ApiError::internal(error.to_string())),
+    }
+}
+
+async fn revoke_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<uuid::Uuid>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    match state.control.revoke_key(id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => admin_error(ApiError::new(
+            StatusCode::NOT_FOUND,
+            ErrorKind::NotFound,
+            "key_not_found",
+            format!("no live key `{id}`"),
+        )),
+        Err(error) => admin_error(ApiError::internal(error.to_string())),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageQuery {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default = "default_days")]
+    days: i64,
+}
+
+fn default_days() -> i64 {
+    30
+}
+
+/// Daily usage per tenant and model from the ledger.
+async fn usage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    let since = chrono::Utc::now() - chrono::Duration::days(query.days.clamp(1, 366));
+    match state
+        .control
+        .store()
+        .daily_usage(query.tenant.as_deref(), since)
+        .await
+    {
+        Ok(rows) => Json(json!({ "usage": rows })).into_response(),
+        Err(error) => admin_error(ApiError::internal(error.to_string())),
+    }
 }

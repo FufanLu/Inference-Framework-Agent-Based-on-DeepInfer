@@ -21,7 +21,24 @@ pub fn install() -> anyhow::Result<PrometheusHandle> {
 }
 
 fn describe() {
-    use metrics::{describe_counter, describe_histogram};
+    use metrics::{describe_counter, describe_gauge, describe_histogram};
+    describe_gauge!(
+        "lev_worker_running",
+        "Sequences running on a worker (its last report)."
+    );
+    describe_gauge!("lev_worker_waiting", "Sequences queued on a worker.");
+    describe_gauge!(
+        "lev_worker_kv_usage",
+        "Fraction of a worker's KV blocks in use."
+    );
+    describe_gauge!(
+        "lev_worker_decode_tokens_per_second",
+        "Decode throughput of a worker."
+    );
+    describe_gauge!(
+        "lev_worker_spec_accept_rate",
+        "Speculative draft acceptance of a worker."
+    );
     describe_counter!(
         "lev_requests_total",
         "Requests by protocol, model and outcome."

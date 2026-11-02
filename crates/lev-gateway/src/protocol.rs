@@ -9,6 +9,20 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 
+/// An error response with a `Retry-After` header when the error has one.
+fn with_retry_after(error: &ApiError, response: Response) -> Response {
+    let mut response = response;
+    if let Some(after) = error.retry_after {
+        let seconds = after.as_secs_f64().ceil().max(1.0) as u64;
+        if let Ok(value) = axum::http::HeaderValue::from_str(&seconds.to_string()) {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, value);
+        }
+    }
+    response
+}
+
 /// What differs between the three API protocols beyond recipe's conversion.
 pub trait ProtocolInfo {
     /// Short name used in metrics, logs and the audit log.
@@ -32,7 +46,10 @@ impl ProtocolInfo for ChatCompletionRequest {
     }
 
     fn error_response(error: &ApiError) -> Response {
-        (error.status, Json(error.openai_body())).into_response()
+        with_retry_after(
+            error,
+            (error.status, Json(error.openai_body())).into_response(),
+        )
     }
 
     fn stream_error_frame(error: &ApiError) -> String {
@@ -48,7 +65,10 @@ impl ProtocolInfo for ResponsesRequest {
     }
 
     fn error_response(error: &ApiError) -> Response {
-        (error.status, Json(error.openai_body())).into_response()
+        with_retry_after(
+            error,
+            (error.status, Json(error.openai_body())).into_response(),
+        )
     }
 
     fn stream_error_frame(error: &ApiError) -> String {
@@ -70,7 +90,10 @@ impl ProtocolInfo for MessagesRequest {
     }
 
     fn error_response(error: &ApiError) -> Response {
-        (error.status, Json(error.anthropic_body())).into_response()
+        with_retry_after(
+            error,
+            (error.status, Json(error.anthropic_body())).into_response(),
+        )
     }
 
     fn stream_error_frame(error: &ApiError) -> String {

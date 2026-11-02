@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: leviathan
+    folder: Leviathan
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

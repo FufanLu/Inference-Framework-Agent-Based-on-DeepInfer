@@ -21,6 +21,8 @@ pub struct Config {
     #[serde(default)]
     pub auth: AuthConfig,
     #[serde(default)]
+    pub control: ControlConfig,
+    #[serde(default)]
     pub dispatch: DispatchConfig,
     #[serde(default)]
     pub audit: AuditConfig,
@@ -135,9 +137,13 @@ impl RouterSection {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct AuthConfig {
-    /// Static API keys. With none configured, the gateway accepts every
-    /// request as tenant `anonymous`.
+    /// Static API keys, provisioned into the control plane at startup.
     pub api_keys: Vec<ApiKeyConfig>,
+    /// Accept requests without a valid key as tenant `anonymous`. Defaults to
+    /// true only when no static keys are configured.
+    pub allow_anonymous: Option<bool>,
+    /// Limits of the anonymous tenant.
+    pub anonymous_limits: LimitsConfig,
     /// Bearer token for `/admin` endpoints. Without one, admin endpoints are
     /// open (local development only).
     pub admin_token: Option<String>,
@@ -148,6 +154,48 @@ pub struct AuthConfig {
 pub struct ApiKeyConfig {
     pub key: String,
     pub tenant: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, flatten)]
+    pub limits: LimitsConfig,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct LimitsConfig {
+    pub rpm: Option<u64>,
+    pub tpm: Option<u64>,
+    pub monthly_token_quota: Option<u64>,
+}
+
+impl From<LimitsConfig> for lev_control::Limits {
+    fn from(limits: LimitsConfig) -> Self {
+        Self {
+            rpm: limits.rpm,
+            tpm: limits.tpm,
+            monthly_token_quota: limits.monthly_token_quota,
+        }
+    }
+}
+
+/// Where control-plane state lives.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ControlConfig {
+    /// `memory`, or a `postgres://` URL.
+    pub store: String,
+    /// `redis://` URL for rate limits shared by all gateway replicas;
+    /// without one, limits are enforced per gateway process.
+    pub redis: Option<String>,
+}
+
+impl Default for ControlConfig {
+    fn default() -> Self {
+        Self {
+            store: "memory".to_string(),
+            redis: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -189,6 +237,7 @@ impl Default for Config {
             workers: Vec::new(),
             router: RouterSection::default(),
             auth: AuthConfig::default(),
+            control: ControlConfig::default(),
             dispatch: DispatchConfig::default(),
             audit: AuditConfig::default(),
         }

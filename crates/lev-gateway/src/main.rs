@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 
     let metrics = lev_gateway::metrics::install()?;
     let listen = config.listen.clone();
-    let state = AppState::new(config, Some(metrics))?;
+    let state = AppState::new(config, Some(metrics)).await?;
     let app = lev_gateway::api::router(state);
     let listener = tokio::net::TcpListener::bind(&listen).await?;
     tracing::info!(%listen, "lev-gateway listening");

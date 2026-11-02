@@ -283,7 +283,7 @@ async fn cluster(
         .map(|endpoint| WorkerConfig { endpoint })
         .collect();
     configure(&mut config);
-    let state = AppState::new(config, None).unwrap();
+    let state = AppState::new(config, None).await.unwrap();
     // Wait until every worker is registered and healthy.
     for _ in 0..200 {
         let snapshot = state.router.snapshot();
@@ -741,5 +741,127 @@ async fn router_policy_can_change_at_runtime() {
     assert_eq!(
         cluster.state.router.snapshot().policy,
         lev_router::Policy::PowerOfTwo
+    );
+}
+
+#[tokio::test]
+async fn api_keys_and_rate_limits_are_enforced() {
+    let cluster = cluster(&one_worker(), |config| {
+        config.auth.api_keys = vec![lev_gateway::config::ApiKeyConfig {
+            key: "lev-test-key".into(),
+            tenant: "acme".into(),
+            name: None,
+            limits: lev_gateway::config::LimitsConfig {
+                rpm: Some(2),
+                ..Default::default()
+            },
+        }];
+    })
+    .await;
+    let body = json!({
+        "model": MODEL,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "thinking": {"type": "disabled"},
+    });
+    let send = |key: Option<&'static str>| {
+        let app = cluster.app.clone();
+        let body = body.clone();
+        async move {
+            let mut request =
+                Request::post("/v1/chat/completions").header("content-type", "application/json");
+            if let Some(key) = key {
+                request = request.header("authorization", format!("Bearer {key}"));
+            }
+            app.oneshot(request.body(Body::from(body.to_string())).unwrap())
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(send(None).await.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        send(Some("lev-wrong")).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(send(Some("lev-test-key")).await.status(), StatusCode::OK);
+    assert_eq!(send(Some("lev-test-key")).await.status(), StatusCode::OK);
+    let throttled = send(Some("lev-test-key")).await;
+    assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+    let retry_after: u64 = throttled.headers()["retry-after"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((1..=30).contains(&retry_after), "retry-after {retry_after}");
+    let bytes = throttled.into_body().collect().await.unwrap().to_bytes();
+    let error: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(error["error"]["code"], "rate_limit_exceeded");
+}
+
+#[tokio::test]
+async fn tenants_keys_and_usage_through_the_admin_api() {
+    let cluster = cluster(&one_worker(), |config| {
+        config.auth.allow_anonymous = Some(false)
+    })
+    .await;
+    let (status, _) = post(
+        &cluster.app,
+        "/admin/tenants",
+        json!({"id": "globex", "name": "Globex", "tpm": 100000}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, created) = post(
+        &cluster.app,
+        "/admin/tenants/globex/keys",
+        json!({"name": "ci"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let created: Value = serde_json::from_str(&created).unwrap();
+    let key = created["key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("lev-"));
+
+    let response = cluster
+        .app
+        .clone()
+        .oneshot(
+            Request::post("/v1/messages")
+                .header("content-type", "application/json")
+                .header("x-api-key", &key)
+                .body(Body::from(
+                    json!({"model": MODEL, "max_tokens": 64, "messages": [{"role": "user", "content": "Hi"}]})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await.unwrap();
+
+    // The ledger is written asynchronously.
+    let mut usage = Value::Null;
+    for _ in 0..40 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let (_, value) = get(&cluster.app, "/admin/usage?tenant=globex").await;
+        if value["usage"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+        {
+            usage = value;
+            break;
+        }
+    }
+    let row = &usage["usage"][0];
+    assert_eq!(row["tenant_id"], "globex");
+    assert_eq!(row["requests"], 1);
+    assert!(row["prompt_tokens"].as_u64().unwrap() > 0);
+    let (_, tenants) = get(&cluster.app, "/admin/tenants").await;
+    assert!(
+        tenants["tenants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["tenant"]["id"] == "globex")
     );
 }

@@ -1,10 +1,30 @@
 [package]
 name = "lev-control"
-description = "Control plane for Leviathan: tenants, API keys, quotas, usage ledger, audit log."
+description = "Control plane for Leviathan: tenants, API keys, rate limits, quotas, usage ledger."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = ["postgres", "redis"]
+postgres = ["dep:sqlx"]
+redis = ["dep:redis"]
+
 [dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+sqlx = { version = "0.9", optional = true, default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid", "tls-none"] }
+redis = { version = "1.8", optional = true, default-features = false, features = ["aio", "tokio-comp", "script", "connection-manager"] }

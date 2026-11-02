@@ -46,7 +46,7 @@ Leviathan 补的是这两个库之间缺失的服务层，结构是“服务平�
 - **基线对比用 `vllm-router`**（vLLM 官方路由），不只是跟自己的 round_robin 比。
 - **sim 闭环标定。** 先在 H200 上用 vLLM 跑一遍 sweep，拟合出 sim 的耗时参数，即 `h200-vllm` profile，这样本地 sim 能复现真实硬件的行为。另外再提供一个按 DeepInfer 公开 Pareto 曲线拟合的 `deepinfer-sm100` profile，用于“换成 SM100 + DeepInfer 会怎样”的推演，并标明数据来源。
 - **重放与 diff。** 审计日志记录 token IDs、采样参数和 seed。sim 能保证逐字复现。在 vLLM 上，如果 `VLLM_BATCH_INVARIANT=1` 支持这个模型就用；不支持就由 diff 视图标出第一个分歧的 token 位置，如实展示。
-- **安全**：用 `DestinationFilter` 拦截内网图片 URL；API key 以 argon2 哈希存储；租户之间隔离。
+- **安全**：用 `DestinationFilter` 拦截内网图片 URL；API key 以 SHA-256 存储（高熵随机串无需 argon2 这类慢哈希）；租户之间隔离。
 
 ## 仓库结构（新建 `~/leviathan`，git init）
 

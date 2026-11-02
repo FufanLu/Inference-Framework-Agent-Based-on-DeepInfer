@@ -214,6 +214,17 @@ impl WorkerPool {
                     }
                 }
                 Some(pb::worker_event::Event::Load(report)) => {
+                    let worker = id.clone();
+                    metrics::gauge!("lev_worker_running", "worker" => worker.clone())
+                        .set(f64::from(report.running));
+                    metrics::gauge!("lev_worker_waiting", "worker" => worker.clone())
+                        .set(f64::from(report.waiting));
+                    metrics::gauge!("lev_worker_kv_usage", "worker" => worker.clone())
+                        .set(f64::from(report.kv_usage));
+                    metrics::gauge!("lev_worker_decode_tokens_per_second", "worker" => worker.clone())
+                        .set(f64::from(report.decode_tokens_per_s));
+                    metrics::gauge!("lev_worker_spec_accept_rate", "worker" => worker)
+                        .set(f64::from(report.spec_accept_rate));
                     self.inner.router.update_load(
                         &id,
                         WorkerLoad {

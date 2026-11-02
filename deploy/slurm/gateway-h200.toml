@@ -1,0 +1,23 @@
+# Gateway on the H200 node, in front of the vLLM workers started by h200.sbatch.
+listen = "0.0.0.0:8080"
+
+[[models]]
+name = "DeepSeek-V4.1-Flash"
+aliases = ["deepseek-flash", "deepseek-ai/DeepSeek-V4.1-Flash", "deepseek-ai/DeepSeek-V4.1-Flash-1017"]
+version = "v4.1"
+tokenizer = "../../assets/tokenizers/v41/tokenizer.json"
+context_limit = 131072
+
+[router]
+policy = "cache_aware"
+index_mode = "exact"
+disaggregation = true
+
+[dispatch]
+max_attempts = 2
+ready_timeout_ms = 600000
+
+[[workers]]
+endpoint = "http://127.0.0.1:50051"
+[[workers]]
+endpoint = "http://127.0.0.1:50052"

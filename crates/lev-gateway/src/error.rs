@@ -53,6 +53,8 @@ pub struct ApiError {
     /// Machine-readable code, e.g. `model_not_found`.
     pub code: &'static str,
     pub message: String,
+    /// For 429: when the client may retry.
+    pub retry_after: Option<std::time::Duration>,
 }
 
 impl ApiError {
@@ -67,6 +69,7 @@ impl ApiError {
             kind,
             code,
             message: message.into(),
+            retry_after: None,
         }
     }
 

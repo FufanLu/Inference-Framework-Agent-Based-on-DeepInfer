@@ -79,8 +79,14 @@ docs/                  设计文档、benchmark、DeepInfer 状态说明
   - [x] 16 个端到端测试（进程内 mock worker + 真实 V4.1 tokenizer）
   - [ ] sim worker（Python）
 - [x] P2 路由器：精确 / 近似前缀索引、4 种策略、PD 配对、会话亲和、in-flight 记账（29 个测试，含 proptest）
-- [ ] P3 真实后端：Explorer H200 上的 vLLM（DeepSeek-V4.1-Flash）、DeepInfer 适配器
-- [ ] P4 企业功能：租户 / 配额 / 用量账本、审计重放、OTel + Prometheus + Grafana
+- [ ] P3 真实后端
+  - [x] vLLM 后端（进程内 AsyncLLM，KV 事件重哈希翻译，DSpark 统计，NIXL PD 交接）与 DeepInfer 适配器（step 循环线程 + fake engine 接口测试）
+  - [x] Explorer 部署脚本（`deploy/slurm`：环境、权重下载、两副本 + 网关、bench/serve/pd 三种模式）
+  - [ ] 在 H200 上实际运行
+- [ ] P4 企业功能
+  - [x] 控制面 `lev-control`：租户、API key（SHA-256 存储）、RPM/TPM 令牌桶（进程内或 Redis 共享）、月度配额、用量账本（内存或 Postgres，批量异步写入）；Postgres/Redis 集成测试
+  - [x] 审计日志 + 逐 token 重放 diff；Prometheus 指标 + Grafana 看板（`dashboards/grafana`）
+  - [ ] OpenTelemetry 链路追踪
 - [ ] P5 控制台 + Agent Studio
 - [ ] P6 Benchmark：4 种策略 vs `vllm-router`，Pareto 曲线
 
