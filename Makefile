@@ -1,4 +1,5 @@
 PYTHON ?= .venv/bin/python
+PY := $(abspath $(PYTHON))
 GEN_DIR := worker/leviathan_worker/_gen
 
 .PHONY: check test-rust test-py proto-py fmt lint venv
@@ -9,11 +10,11 @@ test-rust:
 	cargo test --workspace
 
 test-py: proto-py
-	cd worker && ../$(PYTHON) -m pytest -q
+	cd worker && $(PY) -m pytest -q
 
 proto-py:
 	mkdir -p $(GEN_DIR)
-	$(PYTHON) -m grpc_tools.protoc -I proto \
+	$(PY) -m grpc_tools.protoc -I proto \
 		--python_out=$(GEN_DIR) --grpc_python_out=$(GEN_DIR) --pyi_out=$(GEN_DIR) \
 		proto/leviathan/worker/v1/worker.proto
 
