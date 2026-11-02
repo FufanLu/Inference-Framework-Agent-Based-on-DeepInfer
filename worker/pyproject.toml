@@ -1,0 +1,32 @@
+[project]
+name = "leviathan-worker"
+version = "0.1.0"
+description = "Token-in/token-out inference workers for Leviathan (sim, vLLM, DeepInfer backends)."
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "grpcio>=1.70",
+    "protobuf>=5.29",
+    "tokenizers>=0.21",
+    "xxhash>=3.5",
+]
+
+[project.optional-dependencies]
+dev = ["grpcio-tools>=1.70", "pytest>=8", "pytest-asyncio>=0.24"]
+vllm = ["vllm>=0.31.0"]
+
+[project.scripts]
+leviathan-worker = "leviathan_worker.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["leviathan_worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

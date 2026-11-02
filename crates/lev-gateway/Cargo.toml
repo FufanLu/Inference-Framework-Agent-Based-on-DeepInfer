@@ -1,0 +1,18 @@
+[package]
+name = "lev-gateway"
+description = "OpenAI / Anthropic compatible gateway for DeepSeek models, built on deepseek-recipe."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+lev-proto = { workspace = true }
+lev-router = { workspace = true }
+deepseek-recipe = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

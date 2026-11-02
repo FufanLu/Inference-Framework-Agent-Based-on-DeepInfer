@@ -1,0 +1,10 @@
+[package]
+name = "lev-control"
+description = "Control plane for Leviathan: tenants, API keys, quotas, usage ledger, audit log."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

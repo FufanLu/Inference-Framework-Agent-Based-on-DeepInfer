@@ -1,0 +1,51 @@
+[workspace]
+members = [
+    "crates/lev-proto",
+    "crates/lev-router",
+    "crates/lev-control",
+    "crates/lev-gateway",
+    "crates/lev-bench",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/FufanLu/Inference-Framework-Agent-Based-on-DeepInfer"
+
+[workspace.dependencies]
+lev-proto = { path = "crates/lev-proto" }
+lev-router = { path = "crates/lev-router" }
+lev-control = { path = "crates/lev-control" }
+
+deepseek-recipe = "0.2"
+deepseek-recipe-core = "0.2"
+deepseek-recipe-encoding = "0.2"
+tokenizers = "0.23"
+
+anyhow = "1"
+async-stream = "0.3"
+axum = { version = "0.8", features = ["macros"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+futures = "0.3"
+parking_lot = "0.12"
+prost = "0.14"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1.54", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

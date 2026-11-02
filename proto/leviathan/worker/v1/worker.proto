@@ -1,0 +1,245 @@
+// Leviathan worker protocol: token-in / token-out inference workers.
+//
+// The gateway tokenizes requests with deepseek-recipe and talks to workers
+// in token IDs only. A worker wraps one inference engine replica (sim, vLLM,
+// or DeepInfer) and reports KV cache events plus load so that the router can
+// make cache-aware decisions.
+//
+// Block hash convention (shared by the router and every worker):
+//   only full blocks of `block_size` prompt tokens are hashed;
+//   h[0]   = xxh3_64_with_seed(le_u32_bytes(tokens[0..B]),  seed = ROOT_SEED)
+//   h[i]   = xxh3_64_with_seed(le_u32_bytes(tokens[iB..(i+1)B]), seed = h[i-1])
+//   ROOT_SEED = 0x4C45_5649_4154_4841 ("LEVIATHA").
+// Workers whose engine uses a different internal hash (vLLM) translate their
+// native events into this scheme before publishing them.
+
+syntax = "proto3";
+
+package leviathan.worker.v1;
+
+service Worker {
+  // Run one request and stream its output tokens.
+  rpc Generate(GenerateRequest) returns (stream GenerateResponse);
+  // Abort an in-flight request. Dropping the Generate stream also aborts it.
+  rpc Abort(AbortRequest) returns (AbortResponse);
+  // Subscribe to KV cache events and periodic load reports.
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream WorkerEvent);
+  // Describe the worker: backend, model, role, block size, capabilities.
+  rpc GetInfo(GetInfoRequest) returns (WorkerInfo);
+  // Liveness and readiness.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// The part a worker plays in prefill/decode disaggregation.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  // Runs prefill and decode for its requests.
+  ROLE_UNIFIED = 1;
+  // Runs prefill only and hands the KV cache to a decode worker.
+  ROLE_PREFILL = 2;
+  // Receives KV from a prefill worker and runs decode.
+  ROLE_DECODE = 3;
+}
+
+message SamplingParams {
+  float temperature = 1;
+  float top_p = 2;
+  uint32 max_tokens = 3;
+  // The gateway always sets a seed so that requests can be replayed.
+  uint64 seed = 4;
+  bool logprobs = 5;
+  uint32 top_logprobs = 6;
+  // Generation stops on these token IDs; they are never streamed back.
+  repeated uint32 stop_token_ids = 7;
+  bool ignore_eos = 8;
+}
+
+// Mirrors deepseek-recipe `OutputConstraint`: `kind()` and `schema()`.
+message OutputConstraint {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // Any JSON value (empty schema) or a document matching `schema`.
+    KIND_JSON = 1;
+    KIND_REGEX = 2;
+    // A DSML tool call block; `schema` is the JSON array of tools.
+    KIND_TOOL_CALL = 3;
+    KIND_TOOL_CALL_REQUIRED = 4;
+  }
+  Kind kind = 1;
+  string schema = 2;
+}
+
+// KV cache hand-off between a prefill and a decode worker.
+message KvTransfer {
+  string source_worker_id = 1;
+  // Backend-specific opaque payload: vLLM kv_transfer_params JSON, or the
+  // simulated block list for the sim backend.
+  string handle = 2;
+  uint32 num_tokens = 3;
+}
+
+message GenerateRequest {
+  string request_id = 1;
+  repeated uint32 prompt_token_ids = 2;
+  SamplingParams sampling = 3;
+  optional OutputConstraint constraint = 4;
+  // UNIFIED for single-stage requests; PREFILL or DECODE in disaggregation.
+  Role stage = 5;
+  // For DECODE: where to load the prompt KV from.
+  optional KvTransfer kv_transfer = 6;
+  string tenant_id = 7;
+  int32 priority = 8;
+  // Request facts the gateway derived during conversion. Backends may use
+  // them (the sim backend shapes its synthetic output with them); real
+  // engines ignore them. Keys: thinking, last_role, effort.
+  map<string, string> hints = 9;
+}
+
+message GenerateResponse {
+  oneof event {
+    Ready ready = 1;
+    TokenBatch tokens = 2;
+    Finished finished = 3;
+  }
+}
+
+// Sent once, when prefill is done and before any output token.
+message Ready {
+  uint32 prompt_tokens = 1;
+  // Prompt tokens served from the prefix cache (or received via KV transfer).
+  uint32 cached_tokens = 2;
+  uint64 queue_time_us = 3;
+  uint64 prefill_time_us = 4;
+  // For PREFILL stage: the hand-off for the decode worker.
+  optional KvTransfer kv_transfer = 5;
+}
+
+message TokenLogprob {
+  float logprob = 1;
+  repeated uint32 top_token_ids = 2;
+  repeated float top_logprobs = 3;
+}
+
+// Output tokens of one engine step. EOS and stop tokens are never included.
+message TokenBatch {
+  repeated uint32 token_ids = 1;
+  // Empty unless SamplingParams.logprobs; otherwise one entry per token.
+  repeated TokenLogprob logprobs = 2;
+  // Speculative decoding (DSpark / MTP) statistics for this step.
+  uint32 draft_tokens = 3;
+  uint32 accepted_tokens = 4;
+}
+
+enum FinishReason {
+  FINISH_REASON_UNSPECIFIED = 0;
+  FINISH_REASON_STOP = 1;
+  FINISH_REASON_LENGTH = 2;
+  FINISH_REASON_ABORT = 3;
+  FINISH_REASON_ERROR = 4;
+  FINISH_REASON_CONTENT_FILTER = 5;
+}
+
+message Finished {
+  FinishReason reason = 1;
+  uint32 completion_tokens = 2;
+  string error = 3;
+  uint64 decode_time_us = 4;
+}
+
+message AbortRequest {
+  string request_id = 1;
+}
+
+message AbortResponse {
+  bool found = 1;
+}
+
+message SubscribeEventsRequest {
+  // Ask the worker to start with a snapshot of every cached block (sent as
+  // BlockStored events) so that a new subscriber converges immediately.
+  bool snapshot = 1;
+  uint32 load_report_interval_ms = 2;
+}
+
+message WorkerEvent {
+  oneof event {
+    KvEventBatch kv = 1;
+    LoadReport load = 2;
+  }
+}
+
+message KvEventBatch {
+  // Strictly increasing per subscription; a gap means lost events and the
+  // subscriber should resubscribe with a snapshot.
+  uint64 seq = 1;
+  repeated KvEvent events = 2;
+}
+
+message KvEvent {
+  oneof event {
+    BlockStored stored = 1;
+    BlockRemoved removed = 2;
+    AllCleared cleared = 3;
+  }
+}
+
+enum Medium {
+  MEDIUM_UNSPECIFIED = 0;
+  MEDIUM_GPU = 1;
+  MEDIUM_CPU = 2;
+}
+
+// A chain of consecutive blocks, the first one following `parent_hash`
+// (absent for the first block of a prompt).
+message BlockStored {
+  repeated uint64 block_hashes = 1;
+  optional uint64 parent_hash = 2;
+  Medium medium = 3;
+}
+
+message BlockRemoved {
+  repeated uint64 block_hashes = 1;
+  Medium medium = 2;
+}
+
+message AllCleared {}
+
+message LoadReport {
+  uint32 running = 1;
+  uint32 waiting = 2;
+  // Fraction of KV blocks in use, 0..1.
+  float kv_usage = 3;
+  uint64 free_blocks = 4;
+  float prefill_tokens_per_s = 5;
+  float decode_tokens_per_s = 6;
+  // Speculative decoding acceptance over the last report window, 0..1.
+  float spec_accept_rate = 7;
+  uint64 timestamp_ms = 8;
+}
+
+message GetInfoRequest {}
+
+message WorkerInfo {
+  string worker_id = 1;
+  // sim | vllm | deepinfer
+  string backend = 2;
+  // Served model name, e.g. DeepSeek-V4.1-Flash.
+  string model = 3;
+  Role role = 4;
+  uint32 block_size = 5;
+  uint32 context_limit = 6;
+  uint64 total_blocks = 7;
+  bool supports_kv_events = 8;
+  bool supports_constraints = 9;
+  bool supports_logprobs = 10;
+  // Identical inputs and seeds give identical outputs.
+  bool deterministic = 11;
+  map<string, string> labels = 12;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+  string status = 2;
+}
