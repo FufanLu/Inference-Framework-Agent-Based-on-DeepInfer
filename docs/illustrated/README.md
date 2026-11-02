@@ -1,16 +1,18 @@
-# 图解 Leviathan
+# Leviathan, illustrated
 
-用**一个请求的一生**串起整个系统：从客户端发出 `POST /v1/chat/completions`，到最后一个 SSE 帧返回，每一站都配图，并附上**实际运行得到的数据**（真实渲染的 prompt、token ID、块哈希、路由打分），不使用编造的示意值。
+One request's life ties the whole system together: from a client's `POST /v1/chat/completions` to the last SSE frame, every stop has a diagram and **data from actual runs** (real rendered prompts, token IDs, block hashes, routing scores, benchmark tables), never made-up example values.
 
-| 篇 | 主题 | 一句话 | 状态 |
+| # | Topic | In one line | Status |
 | --- | --- | --- | --- |
-| [01](01-request-lifecycle.md) | 一个请求的一生 | 全链路时序图；`Ready` 是能否重试的分界线；Ticket 记负载 | ✅（sim 实测记录待补） |
-| [02](02-recipe-protocol.md) | deepseek-recipe 把请求变成 token | 三种协议渲染成同一串 token，因此共享 KV cache；特殊 token 防注入；输出端的 `</think>` 和 DSML 解析 | ✅ |
-| [03](03-prefix-index.md) | 块哈希与前缀索引 | 链式哈希让一个 u64 代表整段前缀；位图索引；精确 / 近似两种来源 | ✅ |
-| [04](04-cache-aware-routing.md) | cache-aware 路由 | 把缓存命中和负载统一换算成预计 TTFT；真实拐点约 51 条序列 | ✅ |
-| 05 | PD 分离 | prefill 池 → KV 交接 → decode 池 | 待写（P2/P3） |
-| 06 | 模拟引擎 | 连续批处理、分层 KV、DSpark 投机解码的模拟，以及用 H200 实测标定 | 待写 |
-| [07](07-vllm-on-h200.md) | H200 上的 vLLM | 同一个模型换一个引擎；vLLM 带盐的块哈希为什么要重哈希；混合注意力只跟踪全上下文那一组 | ✅（实测数据待补） |
-| 08 | 可观测性与重放 | 一个请求的 trace、指标，以及逐 token 的重放 diff | 待写（P4） |
+| [01](01-request-lifecycle.md) | The life of a request | The full sequence; `Ready` is where retries stop being safe; tickets carry load | ✅ |
+| [02](02-recipe-protocol.md) | How deepseek-recipe turns a request into tokens | Three protocols render to the same tokens, so they share KV cache; special tokens resist injection; parsing `</think>` and DSML on the way out | ✅ |
+| [03](03-prefix-index.md) | Block hashes and the prefix index | A chained hash lets one u64 stand for a whole prefix; bitmask index; exact vs approximate sources | ✅ |
+| [04](04-cache-aware-routing.md) | Cache-aware routing | Hits and load in one unit, estimated TTFT; a bug found with benchmark data | ✅ |
+| [05](05-pd-disaggregation.md) | Prefill/decode disaggregation | Measured: it wins TPOT on long unique prompts and loses TTFT; the P:D ratio is the knob | ✅ |
+| [06](06-sim-engine.md) | The simulated engine | Same protocol as vLLM, step-level cost model, real tokens for the real parser | ✅ |
+| [07](07-vllm-on-h200.md) | vLLM on H200 | Same model, another engine; why vLLM's salted hashes are re-hashed; hybrid attention groups | ✅ (measurements pending) |
+| 08 | Observability and replay | A request's trace, the metrics, token-level replay diffs | planned |
 
-每篇末尾都有“为什么这样设计”一节，回答最常被追问的设计取舍。
+Every chapter ends with a "Why it is built this way" section answering the design questions people ask most.
+
+The sim numbers use a placeholder H200 profile; relative comparisons are meaningful, absolute values wait for the H200 runs.

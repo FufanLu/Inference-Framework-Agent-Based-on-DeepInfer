@@ -1,55 +1,55 @@
-# 图解 03：块哈希与前缀索引 —— 路由器怎么知道“谁缓存了这段 prompt”
+# Illustrated 03: Block hashes and the prefix index: how the router knows who has a prompt cached
 
-> 对应代码：`crates/lev-router/src/hashing.rs`、`crates/lev-router/src/index.rs`、`worker/leviathan_worker/hashing.py`
-> 上一篇：[02 deepseek-recipe 把请求变成 token](02-recipe-protocol.md) · 下一篇：[04 cache-aware 路由](04-cache-aware-routing.md)
+> Code: `crates/lev-router/src/hashing.rs`, `crates/lev-router/src/index.rs`, `worker/leviathan_worker/hashing.py`
+> Previous: [02 deepseek-recipe](02-recipe-protocol.md) · Next: [04 Cache-aware routing](04-cache-aware-routing.md)
 
-## 要解决的问题
+## The problem
 
-DeepInfer 的 README 明确说，开源版不包含 “KV cache 系统” 和 “DP 副本间负载均衡”。两者缺一不可：同一段 prompt 前缀（比如 agent 的几千 token 系统提示）如果总是落到**已经缓存了它**的副本上，prefill 就能省掉大部分计算，TTFT 直接下降一个数量级。
+DeepInfer's README states that the open release does not include "a KV cache system" or "load balancing across data-parallel replicas". The two go together: if the same prompt prefix (say, an agent's system prompt of a few thousand tokens) keeps landing on the replica that **already caches it**, most of the prefill is skipped and time to first token drops by an order of magnitude.
 
-前提是路由器能回答这个问题：
-
-```
-这个请求的 prompt token 序列 ──► 每个 worker 已经缓存了它的前多少个 token？
-```
-
-## 第一步：把 token 切成块
-
-推理引擎按**块**（block，vLLM 叫 page）管理 KV cache，前缀缓存的粒度也是块。只有**完整的块**才会被缓存和共享，最后不满一块的尾巴不算。
+That requires the router to answer:
 
 ```
-prompt token:  [ t0 t1 t2 t3 | t4 t5 t6 t7 | t8 t9 t10 t11 | t12 t13 ]
-                 block 0        block 1        block 2         不满一块，不参与
+prompt token IDs of this request ──► how many leading tokens does each worker already cache?
 ```
 
-## 第二步：链式哈希 —— 一个哈希代表“整段前缀”
+## Step 1: cut tokens into blocks
 
-每个块的哈希都用**上一个块的哈希做种子**：
+Engines manage the KV cache in **blocks** (pages in vLLM), and prefix caching works at that granularity. Only **full blocks** are cached and shared; a trailing partial block is not.
+
+```
+prompt tokens: [ t0 t1 t2 t3 | t4 t5 t6 t7 | t8 t9 t10 t11 | t12 t13 ]
+                 block 0        block 1        block 2         partial, ignored
+```
+
+## Step 2: chained hashes, one hash for the whole prefix
+
+Each block's hash is seeded with **the previous block's hash**:
 
 ```mermaid
 flowchart LR
     S(["ROOT_SEED<br/>0x4C45564941544841<br/>= &quot;LEVIATHA&quot;"]) --> H0
-    B0["block 0 的 token<br/>(u32 小端字节)"] --> H0["h0 = xxh3_64(block0, seed=ROOT)"]
+    B0["tokens of block 0<br/>(u32 little-endian)"] --> H0["h0 = xxh3_64(block0, seed=ROOT)"]
     H0 --> H1["h1 = xxh3_64(block1, seed=h0)"]
     B1["block 1"] --> H1
     H1 --> H2["h2 = xxh3_64(block2, seed=h1)"]
     B2["block 2"] --> H2
 ```
 
-所以 `h2` 相同，意味着 block 0、1、2 **全部**相同。这样索引里只需存“哈希 → 谁有”，不用存 token 本身。
+An equal `h2` therefore means blocks 0, 1 **and** 2 are all equal. The index only needs "hash → who has it", never the tokens themselves.
 
-**真实数据**（块大小 4，两个用户共享同一段系统提示，`worker/leviathan_worker/hashing.py` 实际运行结果）：
+**Real data** (block size 4; two users share one system prompt; output of `worker/leviathan_worker/hashing.py`):
 
-| 请求 | 前 8 个 token（系统提示） | 后 6 个 token（各自的问题） | 块哈希 |
+| Request | First 8 tokens (system prompt) | Last 6 tokens (their own question) | Block hashes |
 | --- | --- | --- | --- |
 | alice | `0 128799 100 101 102 103 104 105` | `128803 200 201 202 128804 128822` | `91ed0a7eb296aac5` · `90b95e4dae654d52` · `518d3bee13bf8ca9` |
-| bob | 同上 | `128803 300 301 302 128804 128822` | `91ed0a7eb296aac5` · `90b95e4dae654d52` · `25e67fe847cc0fe1` |
+| bob | same | `128803 300 301 302 128804 128822` | `91ed0a7eb296aac5` · `90b95e4dae654d52` · `25e67fe847cc0fe1` |
 
-前两块（系统提示）哈希完全相同，第三块开始分叉，正好是可复用前缀的边界。
+The first two blocks (the system prompt) hash identically and the chains split at the third block, which is exactly where the reusable prefix ends.
 
-### 跨语言一致性
+### Cross-language agreement
 
-路由器是 Rust，worker 是 Python，两边必须算出**逐位相同**的哈希，否则 KV 事件对不上。约定写在 `proto/leviathan/worker/v1/worker.proto` 文件头，两边各有一个测试断言同一组向量：
+The router is Rust and the workers are Python; both must compute **bit-identical** hashes, or KV events would not line up. The convention is written in the header of `proto/leviathan/worker/v1/worker.proto`, and both test suites assert the same vector:
 
 ```
 tokens = 0..10, block_size = 4
@@ -57,74 +57,75 @@ Rust   crates/lev-router/src/hashing.rs   CROSS_LANGUAGE_VECTOR = [0x05CAF1E6F5C
 Python worker/tests/test_hashing.py        CROSS_LANGUAGE_VECTOR = [0x05CAF1E6F5C06121, 0x075FF973CE997C6B]
 ```
 
-vLLM 内部用的是自己的块哈希，所以 vLLM 后端的 worker 会把 vLLM 原生的 KV 事件（事件里带 token IDs）**翻译**成这套约定再发出去。路由器永远只认一种哈希。
+vLLM uses its own (salted) block hashes, so the vLLM worker **translates** vLLM's native KV events into this convention before publishing them ([07](07-vllm-on-h200.md)). The router only ever sees one kind of hash.
 
-## 第三步：索引的数据结构
-
-```
-PrefixIndex.entries : HashMap<u64 块哈希, Entry>
-
-               ┌──────────────────────── Entry ────────────────────────┐
-  91ed0a7e… ──►│ gpu: 0b0110  (slot 1、2 的显存里有)  cpu: 0b1000 (slot 3 的内存里有) │
-  90b95e4d… ──►│ gpu: 0b0010                           cpu: 0b0000                 │
-  518d3bee… ──►│ gpu: 0b0010                           cpu: 0b0000                 │
-               └────────────────────────────────────────────────────────────────┘
-```
-
-- 每个 worker 占一个 **slot**（0..127），集合就是一个 `u128` 位图，求交集只要一次 `&`。
-- 显存（GPU）和内存（CPU tier）分开记：CPU 上的块也算命中，但要先搬回显存，成本更高（见 04 篇的 `cpu_hit_cost_ratio`）。
-- slot 被复用时带 **generation**，旧请求的 Ticket 不会误改新 worker 的计数（`stale_tickets_do_not_touch_a_reused_slot` 测试）。
-
-## 第四步：最长前缀匹配
-
-从第一块开始往后走，`alive` 是“到目前为止每块都有”的 worker 集合：
+## Step 3: the index
 
 ```
-请求块哈希:   h0          h1          h2          h3
-entry.any:  0b0111      0b0011      0b0010      0b0000
-alive:      0b0111  &→  0b0011  &→  0b0010  &→  0b0000（结束）
+PrefixIndex.entries : HashMap<u64 block hash, Entry>
 
-结果: slot0 命中 1 块 · slot1 命中 3 块 · slot2 命中 2 块
+               ┌─────────────────────────── Entry ───────────────────────────┐
+  91ed0a7e… ──►│ gpu: 0b0110 (in GPU memory of slots 1, 2)   cpu: 0b1000 (in host memory of slot 3) │
+  90b95e4d… ──►│ gpu: 0b0010                                   cpu: 0b0000                         │
+  518d3bee… ──►│ gpu: 0b0010                                   cpu: 0b0000                         │
+               └─────────────────────────────────────────────────────────────┘
 ```
 
-注意中间断了就停：slot 有 h0、h2 但没有 h1 时，只算 1 块（`longest_prefix_stops_at_first_gap` 测试）。引擎的前缀缓存也是这样从头连续匹配的。
+- Each worker has a **slot** (0..127), so a set of workers is a `u128` bitmask and an intersection is a single `&`.
+- GPU and CPU tiers are kept apart: a CPU-tier block is a hit, but it must be loaded back first, so it costs more (`cpu_hit_cost_ratio` in [04](04-cache-aware-routing.md)).
+- Slots carry a **generation**, so a ticket from a removed worker cannot touch a new worker that reuses its slot (test `stale_tickets_do_not_touch_a_reused_slot`).
 
-## 第五步：索引的两种数据来源
+## Step 4: longest prefix match
+
+Walk from the first block; `alive` is the set of workers that have had every block so far:
+
+```
+request blocks:  h0          h1          h2          h3
+entry.any:       0b0111      0b0011      0b0010      0b0000
+alive:           0b0111  &→  0b0011  &→  0b0010  &→  0b0000 (stop)
+
+result: slot0 matches 1 block · slot1 matches 3 blocks · slot2 matches 2 blocks
+```
+
+A gap ends the match: a slot holding h0 and h2 but not h1 matches 1 block (test `longest_prefix_stops_at_first_gap`), just like an engine's prefix cache, which also matches contiguously from the start.
+
+## Step 5: two sources for the index
 
 ```mermaid
 flowchart TB
-    subgraph exact["精确模式（默认）"]
-        W1["worker 的 KV cache<br/>写入 / 淘汰 / 降级到 CPU"] -- "SubscribeEvents 流<br/>BlockStored / BlockRemoved / AllCleared" --> I1["PrefixIndex.store / remove"]
+    subgraph exact["exact mode (default)"]
+        W1["worker KV cache<br/>stores / evictions / demotion to CPU"] -- "SubscribeEvents stream<br/>BlockStored / BlockRemoved / AllCleared" --> I1["PrefixIndex.store / remove"]
     end
-    subgraph approx["近似模式"]
-        R["路由器把请求发给 worker w"] --> SH["w 的影子 LRU<br/>记录这个 prompt 的块哈希<br/>TTL + 容量上限"] --> I2["PrefixIndex.store / remove"]
+    subgraph approx["approximate mode"]
+        R["router sends a request to worker w"] --> SH["w's shadow LRU<br/>remembers the prompt's block hashes<br/>TTL + capacity"] --> I2["PrefixIndex.store / remove"]
     end
 ```
 
-| | 精确模式 | 近似模式 |
+| | Exact | Approximate |
 | --- | --- | --- |
-| 数据来源 | worker 上报的 KV 事件，即缓存的真实状态 | 路由器自己的派发历史，相当于“猜” |
-| 能感知淘汰 | 能（`BlockRemoved`） | 不能，只能靠 TTL 和容量估计 |
-| 适用 | sim、vLLM（开启 `--kv-events-config`） | 不发事件的后端；也是 benchmark 的对照组 |
-| 实现 | 位图增删 | 每个 worker 一个 `HashMap<hash, (generation, time)>` + 惰性删除队列，均摊 O(1) |
+| Source | the worker's KV events: the cache as it really is | the router's own dispatch history: an educated guess |
+| Sees evictions | yes (`BlockRemoved`) | no; TTL and capacity are estimates |
+| Used for | sim, vLLM (with `--kv-events-config`) | backends without events (DeepInfer); the control group in benchmarks |
+| Implementation | bitmask set/clear | per worker `HashMap<hash, (generation, time)>` plus a lazily cleaned queue, amortized O(1) |
 
-近似模式的惰性删除：同一个哈希被反复触碰时，队列里会留下旧的 generation，出队时发现 generation 对不上就直接跳过，不用在队列中间删除元素。
+The lazy queue: when the same hash is touched again, the old queue entry keeps its old generation and is simply skipped when it reaches the front, so nothing is ever deleted from the middle of the queue.
 
-## 第六步：一致性 —— 事件丢了怎么办
+## Step 6: consistency, or what happens when events are lost
 
-- **断线即失忆**：worker 一旦不健康，`set_healthy(false)` 会清空它在索引里的所有块，因为它可能重启过，缓存已经没了。
-- **重连带快照**：重新订阅时带 `snapshot=true`，worker 先把现存的全部块以 `BlockStored` 链的形式重放一遍，索引立刻收敛。
-- **序号检测丢包**：每条订阅的 `KvEventBatch.seq` 严格递增，网关发现跳号就重新订阅并要快照。
+- **Unhealthy means forgotten**: when a worker becomes unhealthy, `set_healthy(false)` clears all its blocks from the index; it may have restarted with an empty cache.
+- **Reconnect with a snapshot**: the router resubscribes with `snapshot=true`. The worker first sends `AllCleared`, then replays every cached block as `BlockStored` chains, parents first, so the index converges at once.
+- **Gaps are detected**: `KvEventBatch.seq` increases strictly per subscription; a gap or any end of the stream makes the gateway resubscribe for a fresh snapshot. A subscriber that falls behind is closed (`RESOURCE_EXHAUSTED`) rather than skipped, so a gap never goes unnoticed.
 
-## 验证
+## Verification
 
 ```sh
-cargo test -p lev-router      # 29 个测试，其中 index_matches_naive_model 是 proptest：
-                              # 随机 store/remove/clear 序列后，索引结果和朴素集合模型逐一比对
+cargo test -p lev-router      # 29 tests; index_matches_naive_model is a proptest that
+                              # compares the index with a naive set model after random
+                              # store / remove / clear sequences
 ```
 
-## 为什么这样设计
+## Why it is built this way
 
-- **为什么用链式哈希，而不是给每个块单独哈希？** 单独哈希只能说明“这块内容出现过”，说明不了“前面的内容也一样”。链式哈希让一个 u64 就代表整段前缀，匹配时只需要逐块查表。
-- **为什么用位图存 worker 集合？** 匹配时每块都要求交集，位图交集是一条指令；128 个 slot 对单个路由器管理的副本数绰绰有余。
-- **为什么还保留近似模式？** 一是兼容不发 KV 事件的后端；二是 benchmark 需要一个对照组，用来量化“精确的缓存视图”到底值多少。
+- **Why chain the hashes instead of hashing each block alone?** A standalone hash only says "this block's content appeared somewhere", not "and everything before it matches". A chained hash makes one u64 stand for the whole prefix, so matching is a table lookup per block.
+- **Why bitmasks for worker sets?** Every block of a match intersects sets; a bitmask intersection is one instruction, and 128 slots is plenty for one router's replicas.
+- **Why keep approximate mode?** For backends without KV events, and as a baseline that measures what an exact cache view is worth.

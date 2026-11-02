@@ -1,94 +1,93 @@
-# 图解 07：H200 上的 vLLM —— 换一个引擎，协议不变
+# Illustrated 07: vLLM on H200: another engine, same protocol
 
-> 对应代码：`worker/leviathan_worker/backends/vllm_backend.py`、`deploy/slurm/`
-> 测试：`worker/tests/test_vllm_translation.py`（不需要 GPU）
-> 实测数据：待 Explorer 集群上的运行（P6）补上
+> Code: `worker/leviathan_worker/backends/vllm_backend.py`, `deploy/slurm/`
+> Tests: `worker/tests/test_vllm_translation.py` (no GPU needed)
+> Measured data: pending the Explorer cluster runs (P6)
+> Previous: [06 The simulated engine](06-sim-engine.md)
 
-## 为什么是 vLLM
+## Why vLLM
 
-DeepInfer 只支持 SM100 和昇腾 950（证据见 [deepinfer-status.md](../deepinfer-status.md)），Explorer 集群上最好的卡是 H200（SM90）。vLLM ≥ 0.31 官方支持 **同一个模型** DeepSeek-V4.1-Flash 运行在 H200 上，每副本 TP4 + Engram CPU offload，一台 8 卡节点正好放两个副本：
+DeepInfer supports only SM100 and Ascend 950 (evidence in [deepinfer-status.md](../deepinfer-status.md)), and the best GPUs on the Explorer cluster are H200 (SM90). vLLM ≥ 0.31 officially runs **the same model**, DeepSeek-V4.1-Flash, on H200: four GPUs per replica (TP4) with the Engram tables offloaded to host memory, so one 8-GPU node holds two replicas:
 
 ```
-┌──────────────────────── Explorer gpu 节点：8× H200 (141 GB) · 512 GB 内存 ────────────────────────┐
-│  GPU 0-3  vLLM 副本 0 (TP4)  ◄── worker :50051 ── KV 事件 ZMQ :5557                                 │
-│  GPU 4-7  vLLM 副本 1 (TP4)  ◄── worker :50052 ── KV 事件 ZMQ :5558                                 │
-│  CPU      lev-gateway :8080 ── cache_aware 路由 ── lev-bench / smoke.py（同节点运行，测得的是纯服务端时延）│
-│  内存      两份 Engram 表（pinned，UVA 读取）                                                         │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-          ▲ ssh -L 8080:<node>:8080 explorer  ← 笔记本上的控制台
+┌──────────────────── Explorer gpu node: 8× H200 (141 GB) · 512 GB RAM ────────────────────┐
+│  GPU 0-3  vLLM replica 0 (TP4)  ◄── worker :50051 ── KV events ZMQ :5557                  │
+│  GPU 4-7  vLLM replica 1 (TP4)  ◄── worker :50052 ── KV events ZMQ :5558                  │
+│  CPU      lev-gateway :8080 ── cache_aware routing ── lev-bench / smoke.py on the node    │
+│  RAM      two copies of the Engram tables (pinned, read through UVA)                       │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+          ▲ ssh -L 8080:<node>:8080 explorer   ← the console on a laptop
 ```
 
-## worker 对 vLLM 做了什么
+## What the worker does with vLLM
 
 ```mermaid
 flowchart LR
-    G["gateway<br/>(recipe 渲染 + tokenize)"] -- "prompt token IDs" --> W
-    subgraph W["worker 进程"]
+    G["gateway<br/>(recipe render + tokenize)"] -- "prompt token IDs" --> W
+    subgraph W["worker process"]
         A["TokensPrompt<br/>SamplingParams(output_kind=DELTA,<br/>detokenize=False, seed, structured_outputs)"] --> E["AsyncLLM (in-process)"]
-        E -- "RequestOutput 增量" --> T["TokenBatch<br/>token_ids · logprobs · DSpark 草稿/接受数"]
-        Z["ZMQ SUB<br/>vLLM KVEventBatch (msgpack)"] --> X["KvEventTranslator<br/>重哈希到 Leviathan 约定"] --> H["EventHub<br/>镜像 · 快照 · 负载上报"]
+        E -- "RequestOutput deltas" --> T["TokenBatch<br/>token_ids · logprobs · DSpark drafted/accepted"]
+        Z["ZMQ SUB<br/>vLLM KVEventBatch (msgpack)"] --> X["KvEventTranslator<br/>re-hash into Leviathan's convention"] --> H["EventHub<br/>mirror · snapshots · load reports"]
         S["StatLogger<br/>running · waiting · kv_usage · spec"] --> H
     end
-    T -- "gRPC 流" --> G
+    T -- "gRPC stream" --> G
     H -- "SubscribeEvents" --> G
 ```
 
-要点：
+- **No vLLM chat frontend.** recipe has already rendered and tokenized the prompt; the worker hands token IDs to `AsyncLLM` (`detokenize=False`, `skip_special_tokens=False`) and returns token IDs. Frontend flags such as `--tool-call-parser` and `--enable-auto-tool-choice` are not needed; recipe parses tool calls in the gateway.
+- **Engine arguments exactly as for `vllm serve`.** `--vllm-args` goes through vLLM's own `AsyncEngineArgs` parser, so the H200 recipe's flags apply unchanged (`lev_vllm_args` in `deploy/slurm/common.sh`).
+- **`reasoning_ended`.** Outside thinking mode the prompt ends in `</think>`, so a structured-output grammar applies from the first token; in thinking mode `--reasoning-parser deepseek_v41` delays it until after `</think>`.
+- **No grammar for tool calls.** DSML tags must be produced as special tokens for recipe's parser to recognize them, which a character-level grammar cannot guarantee. The model is trained on DSML, and with `tool_choice=required` the prompt already ends inside the opened call block.
 
-- **不使用 vLLM 的 OpenAI 前端**：prompt 已经由 recipe 渲染、tokenize，worker 只把 token ID 交给 `AsyncLLM`（`detokenize=False`、`skip_special_tokens=False`），输出也是 token ID。vLLM 的 `--tool-call-parser`、`--enable-auto-tool-choice` 这类前端参数不需要，工具调用由网关里的 recipe 解析。
-- **引擎参数与 `vllm serve` 完全一致**：`--vllm-args` 交给 vLLM 自己的 `AsyncEngineArgs` 解析器，recipe 里的 H200 参数可以原样照搬（见 `deploy/slurm/common.sh` 的 `lev_vllm_args`）。
-- **`reasoning_ended`**：非思考模式下 prompt 以 `</think>` 结尾，结构化输出的语法从第一个 token 开始生效；思考模式下由 `--reasoning-parser deepseek_v41` 等到 `</think>` 之后再生效。
-- **工具调用不加语法约束**：DSML 标签必须以特殊 token 的形式生成，recipe 的解析器才认；字符级语法保证不了这一点。模型本身就是按 DSML 训练的，`tool_choice=required` 时 prompt 也已经停在打开的调用块里。
+## KV event translation: why re-hash
 
-## KV 事件翻译：为什么要重哈希
-
-vLLM 的块哈希带随机盐，路由器在拿到 prompt 时**算不出来**，没法拿来查前缀。好在 vLLM 0.31 的 `BlockStored` 事件里带着这些块的 token IDs：
+vLLM's block hashes are salted, so the router, holding only prompt tokens, **cannot compute them** and cannot use them for lookups. vLLM 0.31's `BlockStored` events, however, carry the blocks' token IDs:
 
 ```
-vLLM 事件:   BlockStored{ block_hashes: [v2, v3], parent_block_hash: v1, token_ids: [t16 … t31], block_size: 8 }
+vLLM event:   BlockStored{ block_hashes: [v2, v3], parent_block_hash: v1, token_ids: [t16 … t31], block_size: 8 }
 
-翻译器:      parent = map[v1]                       ← 之前翻译过的 v1 对应的 Leviathan 哈希
-             ours   = block_hashes(t16…t31, 8, parent)   ← 从父块继续 xxh3 链
-             map[v2] = ours[0];  map[v3] = ours[1]
+translator:   parent = map[v1]                            ← the Leviathan hash translated earlier for v1
+              ours   = block_hashes(t16…t31, 8, parent)   ← continue the xxh3 chain from the parent
+              map[v2] = ours[0];  map[v3] = ours[1]
 
-输出:        BlockStored{ block_hashes: [ours0, ours1], parent_hash: map[v1], medium: GPU }
+published:    BlockStored{ block_hashes: [ours0, ours1], parent_hash: map[v1], medium: GPU }
 ```
 
-- `BlockRemoved{[v3]}` 通过 map 查到 `ours1`，映射关系同时删除；
-- 父块不在 map 里（漏了事件）时，记为 orphan，不发出一个无法接到链上的块；
-- `AllBlocksCleared` 时清空 map，并原样发出 `AllCleared`。
+- `BlockRemoved{[v3]}` maps to `ours1` through the table, and the mapping is dropped.
+- A parent missing from the table (missed events) is counted as an orphan; a block that cannot join a chain is never published.
+- `AllBlocksCleared` clears the table and is forwarded as `AllCleared`.
 
-单元测试 `test_stored_chain_is_rehashed_in_leviathan_convention` 断言：分两次到达的 vLLM 事件，翻译后与一次性计算的 `block_hashes(全部 token)` 完全相等。
+The test `test_stored_chain_is_rehashed_in_leviathan_convention` asserts that vLLM events arriving in two pieces translate to exactly `block_hashes(all tokens)` computed in one go.
 
-### 混合注意力：只看全上下文的那一组
+### Hybrid attention: follow only the full-context group
 
-V4.1 每层都有 128 token 的滑动窗口，部分层还有压缩 KV。vLLM 对混合模型按 **KV cache group** 分别发事件（`group_idx`、`kv_cache_spec_kind`、`kv_cache_spec_sliding_window`）。滑动窗口组的块会随窗口滑动不断淘汰，不能代表“这段前缀能不能复用”，所以翻译器只跟踪第一个**非滑动窗口**的组（测试 `test_sliding_window_groups_are_ignored`）。
+V4.1 has a 128-token sliding window in every layer and compressed KV in some. vLLM publishes events per **KV cache group** (`group_idx`, `kv_cache_spec_kind`, `kv_cache_spec_sliding_window`). Sliding-window blocks are evicted as the window moves and say nothing about whether a prefix can be reused, so the translator follows the first group that is **not** sliding-window (test `test_sliding_window_groups_are_ignored`).
 
-## DSpark 统计
+## DSpark statistics
 
-DSpark 每步起草 5 个 token、并行验证。vLLM 在每个 `CompletionOutput.spec_decode_metrics` 里给出**累计**的草稿数和接受直方图；worker 的 `SpecTracker` 把它差分成每步的 `draft_tokens` / `accepted_tokens`，网关累加进审计记录和 `lev_spec_*_tokens_total`。被丢弃的 EOS 所在那一步的统计也不会丢：这时 worker 发一个 token 为空的 `TokenBatch`。
+DSpark drafts 5 tokens per step and verifies them in parallel. vLLM reports **cumulative** draft counts and an acceptance histogram in each `CompletionOutput.spec_decode_metrics`; the worker's `SpecTracker` turns them into per-step `draft_tokens` / `accepted_tokens`, which the gateway adds to the audit log and `lev_spec_*_tokens_total`. A step whose last token is the dropped EOS still counts: the worker sends a token-less `TokenBatch` with its statistics.
 
-## PD 分离（实验性）
+## PD disaggregation (experimental)
 
-`MODE=pd` 时两个副本分别是 prefill 和 decode，KV 通过 NIXL 传输：
+With `MODE=pd` one replica prefills and the other decodes, and the KV moves over NIXL:
 
-| 阶段 | worker 发给 vLLM 的 | 返回给网关的 |
+| Stage | What the worker sends vLLM | What it returns to the gateway |
 | --- | --- | --- |
-| prefill | `max_tokens=1`，`extra_args.kv_transfer_params={"do_remote_decode": true}` | `Ready.kv_transfer.handle` = vLLM 返回的 `kv_transfer_params`（JSON） |
-| decode | `extra_args.kv_transfer_params` = 上面的 handle 原样传入 | 正常的 token 流 |
+| prefill | `max_tokens=1`, `extra_args.kv_transfer_params={"do_remote_decode": true}` | `Ready.kv_transfer.handle` = vLLM's returned `kv_transfer_params` (JSON) |
+| decode | `extra_args.kv_transfer_params` = that handle, unchanged | the usual token stream |
 
-vLLM recipe 只在 GB200 上验证过 1P1D，H200 单节点 TP4+TP4 没有官方验证，所以这一项标为实验性。跑不通时，PD 只在 sim 中演示，并在这里写明原因。
+The vLLM recipe verifies 1P1D only on GB200; TP4 + TP4 on one H200 node is not officially verified, hence "experimental". If it does not work, PD stays a sim demonstration ([05](05-pd-disaggregation.md)) and the reason is recorded here.
 
-## 实测数据（待补）
+## Measurements (pending)
 
-| 指标 | 值 |
+| Metric | Value |
 | --- | --- |
-| 两个副本就绪耗时 | — |
-| 单请求 TTFT / TPOT | — |
-| DSpark 接受率 | — |
-| 4 种策略在 agent-shared-prefix 负载下的 TTFT p99 | — |
+| time for both replicas to become ready | — |
+| single-request TTFT / TPOT | — |
+| DSpark acceptance | — |
+| TTFT p99 of the four policies on agent-shared-prefix | — |
 
-## 为什么这样设计
+## Why it is built this way
 
-- **为什么 worker 进程内嵌 AsyncLLM，而不是把请求转发给 `vllm serve`？** 转发的话，token 进、token 出需要 vLLM 的 completions 接口配合 token ID 输入和 `return_tokens_as_token_ids`，还要多一跳 HTTP 和 JSON。进程内调用可以直接拿到 `num_cached_tokens`、`kv_transfer_params`、逐请求的投机解码统计和调度器统计。
-- **为什么不直接用 vLLM 的块哈希做路由？** 路由发生在请求到达 worker 之前，路由器手上只有 prompt token。只有可以从 token 重算的哈希才能用来查表；而让 vLLM 改用无盐哈希，又会把哈希碰撞攻击面暴露给多租户环境。翻译层把这个问题限制在 worker 内部解决。
+- **Why embed AsyncLLM in the worker instead of proxying to `vllm serve`?** A proxy would need vLLM's completions endpoint to accept token IDs and return `return_tokens_as_token_ids`, plus an extra HTTP and JSON hop. In-process, the worker gets `num_cached_tokens`, `kv_transfer_params`, per-request speculative statistics and scheduler statistics directly.
+- **Why not route on vLLM's own block hashes?** Routing happens before the request reaches any worker, with only prompt tokens in hand; only a hash recomputable from tokens can be looked up. Making vLLM use unsalted hashes instead would expose hash-collision attacks in a multi-tenant deployment. The translation layer keeps the problem inside the worker.

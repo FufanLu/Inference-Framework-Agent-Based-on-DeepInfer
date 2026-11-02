@@ -1,95 +1,96 @@
-# 图解 01：一个请求的一生
+# Illustrated 01: The life of a request
 
-> 对应代码：`crates/lev-gateway/src/pipeline.rs` 全文；协议定义 `proto/leviathan/worker/v1/worker.proto`
-> 下一篇：[02 deepseek-recipe 把请求变成 token](02-recipe-protocol.md)
+> Code: `crates/lev-gateway/src/pipeline.rs`; protocol: `proto/leviathan/worker/v1/worker.proto`
+> Next: [02 How deepseek-recipe turns a request into tokens](02-recipe-protocol.md)
 
-本篇跟着一个请求走完全程：
+This chapter follows one request all the way through:
 
 ```sh
 curl localhost:8080/v1/chat/completions -H 'content-type: application/json' -d '{
   "model": "deepseek-flash",
-  "messages": [{"role": "user", "content": "北京今天天气怎么样？"}],
+  "messages": [{"role": "user", "content": "What is the weather in Beijing today?"}],
   "stream": true
 }'
 ```
 
-## 全程时序图
+## The whole trip
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as 客户端
+    participant C as client
     participant G as lev-gateway
     participant RC as deepseek-recipe
     participant R as lev-router
-    participant W as worker（sim / vLLM）
+    participant W as worker (sim / vLLM)
 
-    Note over W,R: 常驻：每个 worker 一条 SubscribeEvents 流<br/>KV 事件 → 前缀索引，负载上报（250ms）→ 负载视图
+    Note over W,R: always on: one SubscribeEvents stream per worker<br/>KV events → prefix index, load reports (250 ms) → load view
 
     C->>G: POST /v1/chat/completions
-    G->>G: 鉴权：API key → 租户
+    G->>G: authenticate: API key → tenant, admit (RPM / TPM / quota)
     G->>RC: ChatCompletionRequest::convert
     RC-->>G: ConversationRequest
     G->>RC: render_conversation + encode_ids
-    RC-->>G: prompt token IDs（例：18 个）
+    RC-->>G: prompt token IDs (e.g. 18)
     G->>RC: resolve_max_tokens(18, context_limit)
-    G->>G: 补齐 seed，组装 GenerateRequest
+    G->>G: fill in a seed, build GenerateRequest
     G->>R: route(model, prompt token IDs)
-    R->>R: 块哈希 → 最长前缀匹配 → 预计 TTFT 最小
-    R-->>G: Plan + Ticket（in-flight +1）
-    G->>W: gRPC Generate（流式）
+    R->>R: block hashes → longest prefix → lowest estimated TTFT
+    R-->>G: Plan + Ticket (in-flight +1)
+    G->>W: gRPC Generate (stream)
     W-->>G: Ready{prompt_tokens, cached_tokens}
     G->>R: ticket.prefill_done()
-    loop 每个 engine step
+    loop every engine step
         W-->>G: TokenBatch{token_ids, draft/accepted}
-        G->>RC: StreamProcessor 增量解码、解析
-        RC-->>G: 协议 chunk
+        G->>RC: StreamProcessor: incremental decode and parse
+        RC-->>G: protocol chunk
         G-->>C: data: {...chat.completion.chunk...}
     end
     W-->>G: Finished{STOP}
     G-->>C: data: [DONE]
-    G->>R: drop(ticket)（in-flight −1）
-    G->>G: RequestRecord 落账：指标 · 审计日志 · live 事件
+    G->>R: drop(ticket) (in-flight −1)
+    G->>G: RequestRecord settles: metrics · audit log · usage ledger · live event
 ```
 
-## 每一站产出什么
+## What each step produces
 
-| # | 站点 | 产物 | 失败时 |
+| # | Step | Output | On failure |
 | --- | --- | --- | --- |
-| 1 | 解析信封 | `model`、会话键（`x-session-id` / `prompt_cache_key` / `user`） | 400 `invalid_json` |
-| 2 | 模型解析 | `ServedModel`（tokenizer、编码、上下文长度） | 404 `model_not_found`（按协议格式返回） |
-| 3 | recipe 转换 | `ConversationRequest` | 400，透传 recipe 的错误信息 |
-| 4 | 渲染 + 编码 | prompt token IDs | 有图片时返回 400 `unsupported_feature`（本阶段未开启） |
-| 5 | `resolve_max_tokens` | 实际发送的 `max_tokens` | 400 `context_length_exceeded`，不派发 |
-| 6 | 路由 | `RouteDecision`：unified 或 prefill+decode，以及每个候选的打分 | 503 `no_available_worker` |
-| 7 | 派发 | worker 返回 `Ready`：prefill 完成，确认命中多少缓存 | 换一个 worker 重试（最多 3 次，见下） |
-| 8 | 流式解析 | 每个 `TokenBatch` → 协议 chunk | 中途出错时，按协议格式追加一个 SSE 错误帧 |
-| 9 | 落账 | Prometheus 指标、审计条目（可重放）、live 事件 | 客户端中途断开记为 `cancelled` |
+| 1 | authenticate and admit | tenant; RPM token taken, TPM and monthly quota checked | 401 / 403, or 429 with `Retry-After` |
+| 2 | parse the envelope | `model`, session key (`x-session-id` / `prompt_cache_key` / `user`) | 400 `invalid_json` |
+| 3 | resolve the model | `ServedModel` (tokenizer, encoding, context limit) | 404 `model_not_found`, in the protocol's error format |
+| 4 | recipe conversion | `ConversationRequest` | 400 with recipe's message |
+| 5 | render + tokenize | prompt token IDs | 400 `unsupported_feature` for images (not enabled yet) |
+| 6 | `resolve_max_tokens` | the `max_tokens` to send | 400 `context_length_exceeded`, nothing dispatched |
+| 7 | route | `RouteDecision`: unified or prefill + decode, with every candidate's score | 503 `no_available_worker` |
+| 8 | dispatch | the worker's `Ready`: prefill done, cache hits confirmed | retried on another worker, up to 3 attempts (below) |
+| 9 | stream and parse | each `TokenBatch` becomes protocol chunks | an SSE error frame in the protocol's format |
+| 10 | settle | Prometheus metrics, audit entry (replayable), usage ledger, live event | a client that disconnects is recorded as `cancelled` |
 
-## 两个关键边界
+## Two boundaries that matter
 
-### 边界一：`Ready` 之前可以重试，之后不行
+### Boundary 1: retry before `Ready`, never after
 
 ```
-          可重试区                            │            不可重试区
-route → Generate → (worker 排队) → prefill → Ready → TokenBatch → TokenBatch → … → Finished
-                                           │
-                       客户端还没收到任何字节   │   客户端已经收到部分输出
+            retryable                              │            not retryable
+route → Generate → (worker queue) → prefill → Ready → TokenBatch → TokenBatch → … → Finished
+                                            │
+                   the client has no bytes yet  │  the client already has output
 ```
 
-worker 在 `Ready` 之前失败（连不上、超时、prefill 出错）时，网关把它加入 `exclude` 并重新路由，客户端无感知（测试 `failover_skips_a_dead_worker`：一个宕机、一个正常，4 个请求全部成功）。`Ready` 之后再失败，已经发出的 token 无法撤回，只能按协议格式追加一个错误帧：
+When a worker fails before `Ready` (unreachable, timed out, prefill error), the gateway adds it to `exclude` and routes again; the client never notices. The test `failover_skips_a_dead_worker` runs one dead and one healthy worker and all 4 requests succeed. After `Ready`, output already sent cannot be taken back, so the gateway appends an error frame in the protocol's own format:
 
-| 协议 | 中途错误帧 |
+| Protocol | Error after streaming started |
 | --- | --- |
 | Chat Completions | `data: {"error": {"message", "type", "code"}}` |
 | Responses | `event: error` + `{"type": "error", "code", "message"}` |
 | Messages | `event: error` + `{"type": "error", "error": {"type", "message"}}` |
 
-### 边界二：谁持有负载
+### Boundary 2: who holds the load
 
-`Ticket` 从路由那一刻起就把负载记到选中的 worker 上，一直持有到流结束；客户端断开导致流被丢弃时，Ticket 随之释放。路由器因此始终看得到“已派发但 worker 还没上报”的请求（详见 [04](04-cache-aware-routing.md)）。
+A `Ticket` charges the request's load to the chosen worker from the moment it is routed until the stream ends; a client disconnect drops the stream and the ticket with it. The router therefore always sees requests that were dispatched but are not yet in a worker's report (see [04](04-cache-aware-routing.md)).
 
-## PD 分离时多出来的一段
+## The extra leg of a disaggregated request
 
 ```mermaid
 sequenceDiagram
@@ -100,33 +101,49 @@ sequenceDiagram
     P-->>G: Ready{kv_transfer: handle}
     P-->>G: Finished
     G->>D: Generate(stage=DECODE, kv_transfer=handle)
-    D->>P: 拉取 KV（sim：按带宽模拟；vLLM：NIXL）
-    D-->>G: Ready{cached_tokens = 传输的 token 数}
+    D->>P: pull the KV (sim: bandwidth model; vLLM: NIXL)
+    D-->>G: Ready{cached_tokens = transferred tokens}
     D-->>G: TokenBatch …
 ```
 
-向客户端报告的 `cached_tokens` 取 **prefill 侧**的命中数：decode 侧通过传输拿到的 KV 不算缓存命中，因为该计算的 prefill 一个都没省。（测试 `disaggregated_requests_hand_kv_to_decode`。）
+The `cached_tokens` reported to the client are the **prefill worker's** hits: KV that the decode worker received by transfer saved no prefill. (Test: `disaggregated_requests_hand_kv_to_decode`.) Details and measurements: [05](05-pd-disaggregation.md).
 
-## 落账：一个请求留下了什么
+## What a request leaves behind
 
-`GET /admin/requests` 返回的每条审计记录包含以下字段：
+Each audit entry (`GET /admin/requests`) records:
 
-| 字段 | 含义 |
+| Field | Meaning |
 | --- | --- |
-| `request_id` / `response_id` | 网关内部 ID（UUIDv7）/ 客户端看到的 ID（`chatcmpl-…`、`resp_…`、`msg_…`） |
-| `policy` / `plan` / `worker_id` / `prefill_worker_id` / `attempts` | 路由决策、实际执行的 worker、重试次数 |
-| `prompt_tokens` / `cached_tokens` / `completion_tokens` | 用量，按租户计入 Prometheus |
-| `seed` | 网关补齐的采样种子 |
-| `ttft_ms` / `tpot_ms` / `e2e_ms` | 在网关测得的首 token 时间、每 token 时间、端到端时间 |
-| `spec_draft_tokens` / `spec_accepted_tokens` | 投机解码（DSpark）的草稿数与接受数 |
+| `request_id` / `response_id` | gateway ID (UUIDv7) / the ID clients see (`chatcmpl-…`, `resp_…`, `msg_…`) |
+| `policy` / `plan` / `worker_id` / `prefill_worker_id` / `attempts` | the routing decision, where it ran, retries |
+| `prompt_tokens` / `cached_tokens` / `completion_tokens` | usage, also written to the tenant's ledger |
+| `seed` | the sampling seed the gateway filled in |
+| `ttft_ms` / `tpot_ms` / `e2e_ms` | time to first token, time per output token, end to end, measured at the gateway |
+| `spec_draft_tokens` / `spec_accepted_tokens` | DSpark speculative decoding |
+| `timeline` | where the time went, stage by stage |
 | `outcome` / `finish_reason` / `error` | `ok` · `error` · `rejected` · `cancelled` |
 
-> sim worker 接入后，这里会贴一条实际运行得到的记录。
+A real timeline, one disaggregated request on the 2P+2D sim cluster (1728-token prompt, 1664 cached):
 
-审计记录同时保存了 worker 的**完整输入**（prompt token IDs、采样参数、seed、约束），因此 `POST /admin/requests/{id}/replay` 可以原样再跑一遍，并逐 token 比对两次输出（测试 `replay_reproduces_the_output`）。
+```
+auth            start   0.00 ms  dur   0.00 ms
+parse           start   0.00 ms  dur   0.03 ms
+convert         start   0.04 ms  dur   0.01 ms
+render          start   0.04 ms  dur   0.01 ms
+tokenize        start   0.05 ms  dur   2.06 ms
+dispatch        start   2.12 ms  dur  62.31 ms   ← route + prefill worker + KV hand-off + decode worker Ready
+worker.queue    start   5.43 ms  dur  14.52 ms
+worker.prefill  start  19.95 ms  dur  44.49 ms
+decode          start  64.51 ms  dur 646.71 ms   ← 128 output tokens
+respond         start 711.21 ms  dur   0.49 ms
+```
 
-## 为什么这样设计
+The gateway's own work (everything before `dispatch`) is about 2 ms, almost all of it tokenization. The worker and the model dominate. This is also how the routing bug in [04](04-cache-aware-routing.md) was found.
 
-- **为什么要等 `Ready` 才算派发成功？** 这是最后一个“客户端还什么都没收到”的时刻。在它之前失败可以透明重试，在它之后失败必须如实报错。把边界设在这里，重试是安全的：不会出现重复输出。
-- **为什么负载记账放在 Ticket 里，靠 drop 释放？** Rust 的所有权保证每条退出路径都会释放：正常结束、worker 报错、客户端断开、超时，都不会漏。
-- **为什么每个请求都补一个 seed？** 没有 seed 就无法重放。重放是排查“同样的输入为什么输出不一样”（batch 不变性、确定性采样）的唯一手段，也是 DeepInfer 的 batch-invariant 推理想要解决的问题。
+The entry also keeps the worker's **exact inputs** (prompt token IDs, sampling parameters, seed, constraint), so `POST /admin/requests/{id}/replay` re-runs it and compares the two outputs token by token (test `replay_reproduces_the_output`).
+
+## Why it is built this way
+
+- **Why is dispatch only successful once `Ready` arrives?** It is the last moment at which the client has received nothing. Failures before it can be retried transparently, and failures after it must be reported. Putting the boundary there makes retries safe: no output is ever duplicated.
+- **Why is load accounting a ticket released on drop?** Rust ownership guarantees every exit path releases it: normal completion, worker error, client disconnect, timeout.
+- **Why does every request get a seed?** Without one there is nothing to replay. Replay is how you investigate "same input, different output" (batch invariance, deterministic sampling), the problem DeepInfer's batch-invariant inference targets.
