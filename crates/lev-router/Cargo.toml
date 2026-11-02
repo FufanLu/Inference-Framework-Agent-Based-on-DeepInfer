@@ -8,4 +8,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+parking_lot = { workspace = true }
+serde = { workspace = true }
 xxhash-rust = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+serde_json = { workspace = true }

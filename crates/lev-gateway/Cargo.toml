@@ -11,8 +11,33 @@ publish = false
 lev-proto = { workspace = true }
 lev-router = { workspace = true }
 deepseek-recipe = { workspace = true }
+deepseek-recipe-core = { workspace = true }
+deepseek-recipe-encoding = { workspace = true }
+tokenizers = { workspace = true }
+
 anyhow = { workspace = true }
+async-stream = { workspace = true }
 axum = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio-stream = { workspace = true, features = ["net"] }

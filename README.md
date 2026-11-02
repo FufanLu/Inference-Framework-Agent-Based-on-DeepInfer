@@ -75,11 +75,23 @@ docs/                  设计文档、benchmark、DeepInfer 状态说明
 
 - [x] P0 脚手架：workspace、worker 协议、跨语言块哈希约定、CI
 - [ ] P1 协议链路：网关三协议 + sim 后端端到端，OpenAI / Anthropic SDK 冒烟
-- [ ] P2 路由器：精确 / 近似前缀索引、4 种策略、PD 配对、故障重路由
+  - [x] 网关：三协议（JSON + SSE）、Prompt Inspector、PD 两段式派发、失败重试、审计 / 重放、Prometheus 指标、运行时切换路由策略
+  - [x] 16 个端到端测试（进程内 mock worker + 真实 V4.1 tokenizer）
+  - [ ] sim worker（Python）
+- [x] P2 路由器：精确 / 近似前缀索引、4 种策略、PD 配对、会话亲和、in-flight 记账（29 个测试，含 proptest）
 - [ ] P3 真实后端：Explorer H200 上的 vLLM（DeepSeek-V4.1-Flash）、DeepInfer 适配器
 - [ ] P4 企业功能：租户 / 配额 / 用量账本、审计重放、OTel + Prometheus + Grafana
 - [ ] P5 控制台 + Agent Studio
 - [ ] P6 Benchmark：4 种策略 vs `vllm-router`，Pareto 曲线
+
+## 文档：图解 Leviathan
+
+[docs/illustrated/](docs/illustrated/README.md) 跟着一个请求走完全程，每一站都配图并附上实际运行得到的数据：
+
+1. [一个请求的一生](docs/illustrated/01-request-lifecycle.md)
+2. [deepseek-recipe 把请求变成 token](docs/illustrated/02-recipe-protocol.md)：三种协议渲染成同一串 token，因此共享 KV cache
+3. [块哈希与前缀索引](docs/illustrated/03-prefix-index.md)
+4. [cache-aware 路由 = 最小化预计 TTFT](docs/illustrated/04-cache-aware-routing.md)
 
 ## 开发
 
