@@ -22,15 +22,33 @@ pub enum LiveEvent {
     },
     RequestDone {
         request_id: String,
+        protocol: &'static str,
         model: String,
         tenant: String,
+        policy: Option<&'static str>,
         worker_id: Option<String>,
+        prefill_worker_id: Option<String>,
         outcome: &'static str,
+        finish_reason: Option<String>,
         prompt_tokens: u32,
         cached_tokens: u32,
         completion_tokens: u32,
+        spec_draft_tokens: u64,
+        spec_accepted_tokens: u64,
         ttft_ms: Option<f64>,
+        tpot_ms: Option<f64>,
         e2e_ms: f64,
+        at_ms: u64,
+    },
+    /// A stage of a disaggregated request finished: `prefill_done` when the
+    /// prefill worker returned its KV hand-off, `decode_ready` when the decode
+    /// worker has loaded it and is about to stream.
+    Stage {
+        request_id: String,
+        stage: &'static str,
+        worker_id: String,
+        duration_ms: f64,
+        transferred_tokens: u32,
         at_ms: u64,
     },
     Worker {

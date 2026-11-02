@@ -37,6 +37,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/messages", post(protocol_handler::<MessagesRequest>))
         .route("/v1/models", get(list_models))
         .route("/v1/leviathan/render", post(render))
+        .route("/v1/leviathan/detokenize", post(detokenize))
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(ready))
         .route("/metrics", get(metrics))
@@ -52,6 +53,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/keys", get(list_keys))
         .route("/admin/keys/{id}", axum::routing::delete(revoke_key))
         .route("/admin/usage", get(usage))
+        .route("/admin/stats", get(stats))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -196,19 +198,8 @@ where
             })
         })
         .collect();
-    let tokenizer = &model.tokenizer;
-    let added = tokenizer.get_added_vocabulary().get_added_tokens_decoder();
     let ids = &prepared.generate.prompt_token_ids;
-    let tokens: Vec<_> = ids
-        .iter()
-        .map(|&id| {
-            json!({
-                "id": id,
-                "text": tokenizer.decode(&[id], false).unwrap_or_default(),
-                "special": added.contains_key(&id),
-            })
-        })
-        .collect();
+    let tokens = token_views(model, ids);
     let sampling = prepared.generate.sampling.clone().unwrap_or_default();
     let constraint = prepared.generate.constraint.as_ref().map(|constraint| {
         json!({
@@ -248,6 +239,63 @@ where
         "tokens": tokens,
         "timeline": prepared.timeline,
     }))
+}
+
+/// Per-token view of token IDs: `[{id, text, special}]`.
+fn token_views(model: &crate::model::ServedModel, ids: &[u32]) -> Vec<serde_json::Value> {
+    let tokenizer = &model.tokenizer;
+    let added = tokenizer.get_added_vocabulary().get_added_tokens_decoder();
+    ids.iter()
+        .map(|&id| {
+            json!({
+                "id": id,
+                "text": tokenizer.decode(&[id], false).unwrap_or_default(),
+                "special": added.contains_key(&id),
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Deserialize)]
+struct DetokenizeRequest {
+    #[serde(default)]
+    model: Option<String>,
+    ids: Vec<u32>,
+}
+
+/// Token IDs to text, whole and per token (output tokens in the console).
+async fn detokenize(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DetokenizeRequest>,
+) -> Response {
+    if let Err(error) = pipeline::authenticate(&state, &headers).await {
+        return (error.status, Json(error.openai_body())).into_response();
+    }
+    let model = match body.model.as_deref() {
+        Some(name) => state.models.resolve(name),
+        None => state.models.all().first().cloned(),
+    };
+    let Some(model) = model else {
+        return admin_error(ApiError::new(
+            StatusCode::NOT_FOUND,
+            ErrorKind::NotFound,
+            "model_not_found",
+            "unknown model",
+        ));
+    };
+    if body.ids.len() > 200_000 {
+        return admin_error(ApiError::bad_request(
+            "too_many_tokens",
+            "at most 200000 IDs",
+        ));
+    }
+    Json(json!({
+        "model": model.name,
+        "text": model.tokenizer.decode(&body.ids, false).unwrap_or_default(),
+        "tokens": token_views(&model, &body.ids),
+    }))
+    .into_response()
 }
 
 // ------------------------------------------------------------------- admin
@@ -534,6 +582,10 @@ async fn replay_request(
         "finish_reason": finish.and_then(|reason| pb::FinishReason::try_from(reason).ok()).map(|reason| reason.as_str_name()),
         "original_text": decode(original),
         "replay_text": decode(&tokens),
+        "original_token_ids": original,
+        "replay_token_ids": tokens,
+        "original_tokens_view": state.models.resolve(&replay.model).map(|m| token_views(&m, original)),
+        "replay_tokens_view": state.models.resolve(&replay.model).map(|m| token_views(&m, &tokens)),
     }))
     .into_response()
 }
@@ -701,4 +753,89 @@ async fn usage(
         Ok(rows) => Json(json!({ "usage": rows })).into_response(),
         Err(error) => admin_error(ApiError::internal(error.to_string())),
     }
+}
+
+// --------------------------------------------------------------- stats
+
+#[derive(Debug, Deserialize)]
+struct StatsQuery {
+    #[serde(default = "default_window")]
+    window_s: u64,
+}
+
+fn default_window() -> u64 {
+    60
+}
+
+fn percentile(values: &mut [f64], q: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(f64::total_cmp);
+    Some(values[((values.len() - 1) as f64 * q).round() as usize])
+}
+
+/// Rolling KPIs over requests that finished in the last `window_s` seconds.
+async fn stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<StatsQuery>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    let window_s = query.window_s.clamp(1, 3_600);
+    let now = crate::events::now_ms();
+    let since = now.saturating_sub(window_s * 1_000);
+    let entries: Vec<_> = state
+        .audit
+        .recent(state.config.audit.capacity)
+        .into_iter()
+        .filter(|entry| entry.received_at_ms + entry.e2e_ms as u64 >= since)
+        .collect();
+    let mut outcomes = std::collections::BTreeMap::<&str, u64>::new();
+    let mut per_worker = std::collections::BTreeMap::<String, u64>::new();
+    let mut per_policy = std::collections::BTreeMap::<String, u64>::new();
+    let (mut ttft, mut tpot, mut e2e) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut prompt, mut cached, mut completion, mut drafted, mut accepted) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
+    for entry in &entries {
+        *outcomes.entry(entry.outcome).or_default() += 1;
+        if let Some(worker) = &entry.worker_id {
+            *per_worker.entry(worker.clone()).or_default() += 1;
+        }
+        if let Some(policy) = &entry.policy {
+            *per_policy.entry(policy.clone()).or_default() += 1;
+        }
+        if entry.outcome == "ok" {
+            ttft.extend(entry.ttft_ms);
+            tpot.extend(entry.tpot_ms);
+            e2e.push(entry.e2e_ms);
+        }
+        prompt += u64::from(entry.prompt_tokens);
+        cached += u64::from(entry.cached_tokens);
+        completion += u64::from(entry.completion_tokens);
+        drafted += entry.spec_draft_tokens;
+        accepted += entry.spec_accepted_tokens;
+    }
+    let n = entries.len() as u64;
+    let window = window_s as f64;
+    Json(json!({
+        "window_s": window_s,
+        "n": n,
+        "source": "audit log (requests finished in the window)",
+        "requests_per_s": n as f64 / window,
+        "outcomes": outcomes,
+        "ttft_ms": {"p50": percentile(&mut ttft, 0.5), "p90": percentile(&mut ttft, 0.9), "p99": percentile(&mut ttft, 0.99)},
+        "tpot_ms": {"p50": percentile(&mut tpot, 0.5), "p90": percentile(&mut tpot, 0.9)},
+        "e2e_ms": {"p50": percentile(&mut e2e, 0.5), "p99": percentile(&mut e2e, 0.99)},
+        "prompt_tokens": prompt,
+        "cached_tokens": cached,
+        "cache_hit_rate": if prompt > 0 { Some(cached as f64 / prompt as f64) } else { None },
+        "output_tokens_per_s": completion as f64 / window,
+        "spec_accept_rate": if drafted > 0 { Some(accepted as f64 / drafted as f64) } else { None },
+        "per_worker": per_worker,
+        "per_policy": per_policy,
+    }))
+    .into_response()
 }

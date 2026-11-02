@@ -556,8 +556,21 @@ async fn run_disaggregated(
 > {
     let mut prefill_request = generate.clone();
     prefill_request.stage = pb::Role::Prefill as i32;
+    let prefill_started = Instant::now();
     let (prefill_ready, mut prefill_stream) =
         run_stage(state, prefill_worker, prefill_request, timeout).await?;
+    let elapsed_ms = |since: Instant| since.elapsed().as_secs_f64() * 1e3;
+    state.events.publish(LiveEvent::Stage {
+        request_id: generate.request_id.clone(),
+        stage: "prefill_done",
+        worker_id: prefill_worker.to_string(),
+        duration_ms: elapsed_ms(prefill_started),
+        transferred_tokens: prefill_ready
+            .kv_transfer
+            .as_ref()
+            .map_or(0, |kv| kv.num_tokens),
+        at_ms: now_ms(),
+    });
     let Some(kv_transfer) = prefill_ready.kv_transfer.clone() else {
         return Err(AttemptError::Fatal(ApiError::upstream(format!(
             "prefill worker {prefill_worker} returned no KV hand-off"
@@ -580,7 +593,16 @@ async fn run_disaggregated(
     let mut decode_request = generate.clone();
     decode_request.stage = pb::Role::Decode as i32;
     decode_request.kv_transfer = Some(kv_transfer);
+    let decode_started = Instant::now();
     let (decode_ready, stream) = run_stage(state, decode_worker, decode_request, timeout).await?;
+    state.events.publish(LiveEvent::Stage {
+        request_id: generate.request_id.clone(),
+        stage: "decode_ready",
+        worker_id: decode_worker.to_string(),
+        duration_ms: elapsed_ms(decode_started),
+        transferred_tokens: decode_ready.cached_tokens,
+        at_ms: now_ms(),
+    });
     let ready = pb::Ready {
         prompt_tokens: prefill_ready.prompt_tokens,
         // A cache hit is what the prefill worker did not recompute; tokens the
@@ -800,14 +822,21 @@ impl Drop for RequestRecord {
         let ms = |duration: Duration| duration.as_secs_f64() * 1e3;
         self.state.events.publish(LiveEvent::RequestDone {
             request_id: self.request_id.clone(),
+            protocol: self.protocol,
             model: self.model.clone(),
             tenant: self.tenant.id.clone(),
+            policy: inner.policy,
             worker_id: inner.worker_id.clone(),
+            prefill_worker_id: inner.prefill_worker_id.clone(),
             outcome,
+            finish_reason: inner.finish_reason.clone(),
             prompt_tokens: inner.prompt_tokens,
             cached_tokens: inner.cached_tokens,
             completion_tokens: inner.completion_tokens,
+            spec_draft_tokens: inner.draft_tokens,
+            spec_accepted_tokens: inner.accepted_tokens,
             ttft_ms: ttft.map(ms),
+            tpot_ms: tpot.map(ms),
             e2e_ms: ms(e2e),
             at_ms: now_ms(),
         });

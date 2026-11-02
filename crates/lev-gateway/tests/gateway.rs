@@ -896,3 +896,57 @@ async fn audit_records_a_stage_timeline() {
         assert!(names.contains(&expected), "missing {expected} in {names:?}");
     }
 }
+
+#[tokio::test]
+async fn detokenize_stats_and_replay_tokens() {
+    let cluster = cluster(&one_worker(), |_| {}).await;
+    let (status, body) = post(
+        &cluster.app,
+        "/v1/leviathan/detokenize",
+        json!({"ids": [0, 6127, 128822]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["tokens"][1]["text"], "北京");
+    assert_eq!(body["tokens"][2]["special"], true);
+
+    let response = cluster
+        .app
+        .clone()
+        .oneshot(
+            Request::post("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}], "thinking": {"type": "disabled"}})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let request_id = response.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let _ = response.into_body().collect().await.unwrap();
+
+    let (_, stats) = get(&cluster.app, "/admin/stats?window_s=60").await;
+    assert_eq!(stats["n"], 1, "{stats}");
+    assert!(stats["ttft_ms"]["p50"].as_f64().is_some());
+    assert_eq!(stats["per_worker"]["w0"], 1);
+
+    let (_, replay) = post(
+        &cluster.app,
+        &format!("/admin/requests/{request_id}/replay"),
+        json!({}),
+    )
+    .await;
+    let replay: Value = serde_json::from_str(&replay).unwrap();
+    assert_eq!(replay["original_token_ids"], replay["replay_token_ids"]);
+    assert!(
+        replay["replay_tokens_view"]
+            .as_array()
+            .is_some_and(|t| !t.is_empty())
+    );
+}
