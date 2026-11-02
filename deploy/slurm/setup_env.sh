@@ -8,7 +8,9 @@ mkdir -p "$LEV_SCRATCH/envs" "$HF_HOME"
 module load miniconda3/25.9.1
 source "$(conda info --base)/etc/profile.d/conda.sh"
 if [[ ! -d "$LEV_ENV" ]]; then
-    conda create -y -p "$LEV_ENV" python=3.12
+    # conda-forge only: the Anaconda default channels require accepting
+    # Anaconda's terms of service, which is the user's decision, not a script's.
+    conda create -y -p "$LEV_ENV" --override-channels -c conda-forge python=3.12
 fi
 conda activate "$LEV_ENV"
 pip install -U "vllm==0.31.0" "huggingface_hub[cli,hf_transfer]" \
