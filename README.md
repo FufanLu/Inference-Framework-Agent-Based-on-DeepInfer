@@ -77,7 +77,8 @@ docs/                  设计文档、benchmark、DeepInfer 状态说明
 - [ ] P1 协议链路：网关三协议 + sim 后端端到端，OpenAI / Anthropic SDK 冒烟
   - [x] 网关：三协议（JSON + SSE）、Prompt Inspector、PD 两段式派发、失败重试、审计 / 重放、Prometheus 指标、运行时切换路由策略
   - [x] 16 个端到端测试（进程内 mock worker + 真实 V4.1 tokenizer）
-  - [ ] sim worker（Python）
+  - [x] sim worker（Python）：连续批处理、分块 prefill、GPU/CPU 分层前缀缓存、DSpark 投机解码模拟、PD 交接、合法的思考 / JSON / 正则 / DSML 输出；158 个测试
+  - [x] 官方 OpenAI / Anthropic SDK 冒烟（`scripts/smoke.py`）：10/10 通过
 - [x] P2 路由器：精确 / 近似前缀索引、4 种策略、PD 配对、会话亲和、in-flight 记账（29 个测试，含 proptest）
 - [ ] P3 真实后端
   - [x] vLLM 后端（进程内 AsyncLLM，KV 事件重哈希翻译，DSpark 统计，NIXL PD 交接）与 DeepInfer 适配器（step 循环线程 + fake engine 接口测试）

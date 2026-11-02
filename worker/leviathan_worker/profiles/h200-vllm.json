@@ -1,0 +1,20 @@
+{
+  "source": "PLACEHOLDER, not measured: plausible hand-picked values for DeepSeek-V4.1-Flash on vLLM >= 0.31, one TP4 replica on 4x H200 (fp8 KV cache, DSpark speculative decoding). Refit from an Explorer H200 sweep before quoting any number produced with this profile.",
+  "notes": "Step time: decode_step_base_us + decode_step_per_seq_us * decoding sequences, plus prefill_us_per_token per uncached prompt token computed in the step (a prefill-only step pays prefill_base_us instead of the decode base). Capacity: ~38 GiB of KV per replica at ~30 KiB per token gives ~20k blocks of 64 tokens; the CPU tier assumes ~64 GiB of host memory per replica. kv_transfer_gbps is in gigabits per second (NIXL between the TP4 groups of a 1P+1D node).",
+  "prefill_base_us": 8000,
+  "prefill_us_per_token": 30,
+  "decode_step_base_us": 14000,
+  "decode_step_per_seq_us": 120,
+  "max_num_seqs": 256,
+  "max_batched_tokens": 8192,
+  "block_size": 64,
+  "total_blocks": 20000,
+  "cpu_blocks": 32768,
+  "cpu_load_us_per_block": 40,
+  "kv_bytes_per_token": 30720,
+  "kv_transfer_gbps": 400,
+  "spec_num_draft": 5,
+  "spec_accept_prob": 0.72,
+  "mean_output_tokens": 400,
+  "context_limit": 131072
+}

@@ -25,6 +25,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["leviathan_worker*"]
 
+[tool.setuptools.package-data]
+# Sim profiles, plus the protobuf stubs when `make proto-py` ran before the build.
+leviathan_worker = ["profiles/*.json", "_gen/**/*.py", "_gen/**/*.pyi"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

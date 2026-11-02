@@ -3,66 +3,89 @@
 #
 #   scripts/dev.sh                 # 2 prefill + 2 decode sim workers (PD)
 #   scripts/dev.sh unified 4       # 4 unified sim workers
-#   PROFILE=fast-dev scripts/dev.sh unified 2
-#   WORKER_ARGS="--total-blocks 1000" scripts/dev.sh unified 8   # small KV per replica
+#   scripts/dev.sh stop            # stop the stack started from this checkout
 #
-# Gateway: http://127.0.0.1:8080. Logs: .dev/logs/. Ctrl-C stops everything.
+# Environment:
+#   PROFILE=fast-dev               sim profile (default h200-vllm)
+#   WORKER_ARGS="--total-blocks 800"  extra worker flags (e.g. small KV per replica)
+#   GATEWAY_PORT=8080 BASE_PORT=50051  ports, so several stacks can coexist
+#
+# Logs and PIDs live in .dev/. Only processes recorded in .dev/pids are ever
+# stopped; other stacks on the machine are left alone.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MODE="${1:-pd}"
-COUNT="${2:-2}"
-PROFILE="${PROFILE:-h200-vllm}"
-PY="${PYTHON:-.venv/bin/python}"
-LOGS=.dev/logs
+DEV=.dev
+LOGS=$DEV/logs
+PIDS=$DEV/pids
 mkdir -p "$LOGS"
 
-make -s proto-py PYTHON="$PY"
-cargo build -q --release -p lev-gateway -p lev-bench
-
-pids=()
-cleanup() {
-    echo "stopping ${#pids[@]} processes"
-    kill "${pids[@]}" 2>/dev/null || true
-    wait 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-
-start_worker() {
-    local id="$1" role="$2" port="$3"
-    (cd worker && exec "../$PY" -m leviathan_worker.server --backend sim --host 127.0.0.1 --port "$port" \
-        --worker-id "$id" --role "$role" --profile "$PROFILE" \
-        --tokenizer ../assets/tokenizers/v41/tokenizer.json --log-format text ${WORKER_ARGS:-}) >"$LOGS/$id.log" 2>&1 &
-    pids+=($!)
-    workers+=(--worker "http://127.0.0.1:$port")
+stop_stack() {
+    [[ -f "$PIDS" ]] || return 0
+    while read -r pid; do
+        kill "$pid" 2>/dev/null || true
+    done <"$PIDS"
+    rm -f "$PIDS"
 }
 
-workers=()
-port=50051
+MODE="${1:-pd}"
+COUNT="${2:-2}"
+if [[ "$MODE" == "stop" ]]; then
+    stop_stack
+    echo "stopped"
+    exit 0
+fi
 case "$MODE" in
-pd)
-    for i in $(seq 0 $((COUNT - 1))); do start_worker "prefill-$i" prefill $((port++)); done
-    for i in $(seq 0 $((COUNT - 1))); do start_worker "decode-$i" decode $((port++)); done
-    ;;
-unified)
-    for i in $(seq 0 $((COUNT - 1))); do start_worker "sim-$i" unified $((port++)); done
-    ;;
+pd | unified) ;;
 *)
-    echo "usage: $0 [pd|unified] [count]" >&2
+    echo "usage: $0 [pd|unified] [count] | stop" >&2
     exit 2
     ;;
 esac
 
-target/release/lev-gateway --listen 127.0.0.1:8080 "${workers[@]}" >"$LOGS/gateway.log" 2>&1 &
-pids+=($!)
+PROFILE="${PROFILE:-h200-vllm}"
+PY="${PYTHON:-.venv/bin/python}"
+GATEWAY_PORT="${GATEWAY_PORT:-8080}"
+BASE_PORT="${BASE_PORT:-50051}"
 
-for _ in $(seq 1 100); do
-    if curl -fsS http://127.0.0.1:8080/readyz 2>/dev/null | grep -q "ready"; then
+stop_stack # a previous stack from this checkout
+make -s proto-py PYTHON="$PY"
+cargo build -q --release -p lev-gateway -p lev-bench
+
+trap 'stop_stack; exit 0' INT TERM
+trap 'stop_stack' EXIT
+
+workers=()
+start_worker() {
+    local id="$1" role="$2" port="$3"
+    # shellcheck disable=SC2086 # WORKER_ARGS is a list of flags
+    (cd worker && exec "../$PY" -m leviathan_worker.server --backend sim --host 127.0.0.1 --port "$port" \
+        --worker-id "$id" --role "$role" --profile "$PROFILE" \
+        --tokenizer ../assets/tokenizers/v41/tokenizer.json --log-format text ${WORKER_ARGS:-}) \
+        >"$LOGS/$id.log" 2>&1 &
+    echo $! >>"$PIDS"
+    workers+=(--worker "http://127.0.0.1:$port")
+}
+
+port=$BASE_PORT
+if [[ "$MODE" == "pd" ]]; then
+    for i in $(seq 0 $((COUNT - 1))); do start_worker "prefill-$i" prefill $((port++)); done
+    for i in $(seq 0 $((COUNT - 1))); do start_worker "decode-$i" decode $((port++)); done
+else
+    for i in $(seq 0 $((COUNT - 1))); do start_worker "sim-$i" unified $((port++)); done
+fi
+expected=$((port - BASE_PORT))
+
+target/release/lev-gateway --listen "127.0.0.1:$GATEWAY_PORT" "${workers[@]}" >"$LOGS/gateway.log" 2>&1 &
+echo $! >>"$PIDS"
+
+for _ in $(seq 1 150); do
+    if curl -fsS "http://127.0.0.1:$GATEWAY_PORT/readyz" 2>/dev/null | grep -q "ready: $expected healthy"; then
         break
     fi
     sleep 0.2
 done
-echo "gateway: $(curl -fsS http://127.0.0.1:8080/readyz 2>/dev/null || echo 'not ready, see .dev/logs/gateway.log')"
-echo "try:     .venv/bin/python scripts/smoke.py"
-echo "bench:   target/release/lev-bench --requests 200 --concurrency 16"
+echo "gateway: $(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/readyz" 2>/dev/null || echo "not ready, see $LOGS/gateway.log")"
+echo "try:     .venv/bin/python scripts/smoke.py --base-url http://127.0.0.1:$GATEWAY_PORT"
+echo "bench:   target/release/lev-bench --gateway http://127.0.0.1:$GATEWAY_PORT --requests 200"
 wait

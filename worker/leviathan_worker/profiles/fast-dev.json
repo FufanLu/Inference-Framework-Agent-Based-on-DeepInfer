@@ -1,0 +1,20 @@
+{
+  "source": "Synthetic: tiny latencies and a small cache for tests and local development. Models no hardware.",
+  "notes": "A 1k-token prefill takes about 1 ms and a decode step about 0.5 ms, so a whole request finishes in a few milliseconds.",
+  "prefill_base_us": 200,
+  "prefill_us_per_token": 0.5,
+  "decode_step_base_us": 400,
+  "decode_step_per_seq_us": 5,
+  "max_num_seqs": 32,
+  "max_batched_tokens": 512,
+  "block_size": 16,
+  "total_blocks": 512,
+  "cpu_blocks": 256,
+  "cpu_load_us_per_block": 5,
+  "kv_bytes_per_token": 1024,
+  "kv_transfer_gbps": 100,
+  "spec_num_draft": 5,
+  "spec_accept_prob": 0.7,
+  "mean_output_tokens": 40,
+  "context_limit": 8192
+}
