@@ -121,6 +121,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
 5. [Prefill/Decode 分离](docs/illustrated/05-pd-disaggregation.md)
 6. [模拟引擎](docs/illustrated/06-sim-engine.md)
 7. [H200 上的 vLLM](docs/illustrated/07-vllm-on-h200.md)
+8. [可观测性与重放](docs/illustrated/08-observability-and-replay.md)
 
 ## 路线图
 

@@ -3,7 +3,7 @@
 > Code: `worker/leviathan_worker/backends/vllm_backend.py`, `deploy/slurm/`
 > Tests: `worker/tests/test_vllm_translation.py` (no GPU needed)
 > Measured data: pending the Explorer cluster runs (P6)
-> Previous: [06 The simulated engine](06-sim-engine.md)
+> Previous: [06 The simulated engine](06-sim-engine.md) · Next: [08 Observability and replay](08-observability-and-replay.md)
 
 ## Why vLLM
 

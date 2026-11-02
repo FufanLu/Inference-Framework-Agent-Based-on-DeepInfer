@@ -121,6 +121,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 5. [Prefill/decode disaggregation](docs/illustrated/05-pd-disaggregation.md)
 6. [The simulated engine](docs/illustrated/06-sim-engine.md)
 7. [vLLM on H200](docs/illustrated/07-vllm-on-h200.md)
+8. [Observability and replay](docs/illustrated/08-observability-and-replay.md)
 
 ## Roadmap
 

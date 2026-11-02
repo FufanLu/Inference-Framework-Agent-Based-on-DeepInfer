@@ -11,7 +11,7 @@ One request's life ties the whole system together: from a client's `POST /v1/cha
 | [05](05-pd-disaggregation.md) | Prefill/decode disaggregation | Measured: it wins TPOT on long unique prompts and loses TTFT; the P:D ratio is the knob | ✅ |
 | [06](06-sim-engine.md) | The simulated engine | Same protocol as vLLM, step-level cost model, real tokens for the real parser | ✅ |
 | [07](07-vllm-on-h200.md) | vLLM on H200 | Same model, another engine; why vLLM's salted hashes are re-hashed; hybrid attention groups | ✅ (measurements pending) |
-| 08 | Observability and replay | A request's trace, the metrics, token-level replay diffs | planned |
+| [08](08-observability-and-replay.md) | Observability and replay | One drop settles metrics, audit, usage and live events; stage timelines; token-level replay | ✅ |
 
 Every chapter ends with a "Why it is built this way" section answering the design questions people ask most.
 
