@@ -10,12 +10,16 @@
 #   WORKER_ARGS="--total-blocks 800"  extra worker flags (e.g. small KV per replica)
 #   GATEWAY_PORT=8080 BASE_PORT=50051  ports, so several stacks can coexist
 #
-# Logs and PIDs live in .dev/. Only processes recorded in .dev/pids are ever
-# stopped; other stacks on the machine are left alone.
+# Logs and PIDs live in .dev/<gateway port>/. Only processes recorded in that
+# stack's pid file are ever stopped, so stacks on other ports are left alone:
+#   GATEWAY_PORT=18080 BASE_PORT=51051 scripts/dev.sh unified 4
+#   GATEWAY_PORT=18080 scripts/dev.sh stop
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DEV=.dev
+GATEWAY_PORT="${GATEWAY_PORT:-8080}"
+BASE_PORT="${BASE_PORT:-50051}"
+DEV=.dev/$GATEWAY_PORT
 LOGS=$DEV/logs
 PIDS=$DEV/pids
 mkdir -p "$LOGS"
@@ -45,8 +49,6 @@ esac
 
 PROFILE="${PROFILE:-h200-vllm}"
 PY="${PYTHON:-.venv/bin/python}"
-GATEWAY_PORT="${GATEWAY_PORT:-8080}"
-BASE_PORT="${BASE_PORT:-50051}"
 
 stop_stack # a previous stack from this checkout
 make -s proto-py PYTHON="$PY"
