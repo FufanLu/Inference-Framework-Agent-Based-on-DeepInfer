@@ -11,7 +11,7 @@ if [[ ! -d "$LEV_ENV" ]]; then
     conda create -y -p "$LEV_ENV" python=3.12
 fi
 conda activate "$LEV_ENV"
-pip install -U "vllm>=0.31.0" "huggingface_hub[cli,hf_transfer]" \
+pip install -U "vllm==0.31.0" "huggingface_hub[cli,hf_transfer]" \
     "grpcio>=1.70" "grpcio-tools>=1.70" "protobuf>=5.29" "tokenizers>=0.21" "xxhash>=3.5" pyzmq msgspec \
     openai anthropic matplotlib
 python -c "import vllm; print('vllm', vllm.__version__)"

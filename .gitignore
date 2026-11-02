@@ -28,3 +28,6 @@ bench/results/**/*.tmp
 !assets/**
 
 .DS_Store
+
+# Local dev stack
+.dev/

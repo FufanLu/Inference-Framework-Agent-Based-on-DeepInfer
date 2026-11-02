@@ -411,7 +411,9 @@ async fn list_requests(
     if let Err(error) = authorize_admin(&state, &headers) {
         return admin_error(error);
     }
-    let entries = state.audit.recent(query.limit.min(1_000));
+    let entries = state
+        .audit
+        .recent(query.limit.min(state.config.audit.capacity));
     let entries: Vec<&crate::audit::AuditEntry> = entries.iter().map(|entry| &**entry).collect();
     Json(json!({ "requests": entries })).into_response()
 }

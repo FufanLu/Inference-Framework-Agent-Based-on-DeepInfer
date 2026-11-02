@@ -149,10 +149,24 @@ def chat_json_schema(args):
 
 @check("openai responses: non-streaming")
 def responses_basic(args):
-    resp = oa(args).responses.create(model=args.model, input="Say hello", max_output_tokens=64)
+    # effort "none" disables thinking, so the whole budget goes to the answer.
+    resp = oa(args).responses.create(
+        model=args.model, input="Say hello", max_output_tokens=64, reasoning={"effort": "none"}
+    )
     text = resp.output_text
-    assert text, "empty output_text"
-    return repr(text[:60])
+    assert text, f"empty output_text (status={resp.status})"
+    return f"status={resp.status} {text[:50]!r}"
+
+
+@check("openai responses: reasoning items")
+def responses_reasoning(args):
+    resp = oa(args).responses.create(
+        model=args.model, input="Why is the sky blue?", max_output_tokens=2048, reasoning={"effort": "low"}
+    )
+    kinds = [item.type for item in resp.output]
+    assert "reasoning" in kinds and resp.output_text, f"output items {kinds}"
+    details = resp.usage.output_tokens_details
+    return f"items={kinds} reasoning_tokens={details.reasoning_tokens}"
 
 
 @check("anthropic messages: non-streaming")

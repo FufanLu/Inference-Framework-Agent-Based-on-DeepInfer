@@ -37,6 +37,7 @@ fn main() {
     ] {
         let router = Router::new(RouterConfig {
             policy: Policy::CacheAware,
+            prefill_us_per_token: 25.0,
             ..RouterConfig::default()
         });
         for id in ["worker-a", "worker-b"] {

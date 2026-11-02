@@ -125,8 +125,11 @@ pub struct RouterConfig {
     /// Prefer a stable worker per session key when it costs little.
     pub session_affinity: bool,
     pub shadow: ShadowConfig,
-    /// Prefill cost per uncached token when a worker reports no throughput.
-    pub default_prefill_us_per_token: f64,
+    /// Prefill cost of one uncached prompt token on a worker (its capacity,
+    /// calibrated per model and hardware). Workers' observed prefill
+    /// throughput is deliberately not used: a replica serving mostly cache
+    /// hits computes few prefill tokens and would look slow.
+    pub prefill_us_per_token: f64,
     /// Estimated TTFT added by each sequence already running on a worker.
     pub decode_interference_us: f64,
     /// A CPU-tier hit costs this fraction of recomputing the block.
@@ -148,7 +151,7 @@ impl Default for RouterConfig {
             disaggregation: true,
             session_affinity: false,
             shadow: ShadowConfig::default(),
-            default_prefill_us_per_token: 25.0,
+            prefill_us_per_token: 30.0,
             decode_interference_us: 2_000.0,
             cpu_hit_cost_ratio: 0.2,
             max_kv_usage: 0.95,
@@ -209,14 +212,6 @@ impl WorkerState {
     /// requests it sent there when that is higher (fresher).
     fn sequences(&self) -> u32 {
         (self.load.running + self.load.waiting).max(self.inflight)
-    }
-
-    fn us_per_prefill_token(&self, config: &RouterConfig) -> f64 {
-        if self.load.prefill_tokens_per_s > 1.0 {
-            1e6 / f64::from(self.load.prefill_tokens_per_s)
-        } else {
-            config.default_prefill_us_per_token
-        }
     }
 
     fn index_source(&self, mode: IndexMode) -> IndexSource {
@@ -785,7 +780,7 @@ fn score_candidates(inner: &Inner, pool: &[usize], request: &RouteRequest<'_>) -
             let effective_new = uncached + cpu_tokens as f64 * config.cpu_hit_cost_ratio;
             let sequences = worker.sequences();
             let mut cost = (worker.pending_prefill_tokens as f64 + effective_new)
-                * worker.us_per_prefill_token(config)
+                * config.prefill_us_per_token
                 + config.decode_interference_us * f64::from(sequences);
             if worker.load.kv_usage > config.max_kv_usage {
                 // Nearly full: admitting more work forces evictions or queueing.

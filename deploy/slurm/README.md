@@ -7,7 +7,7 @@ node, behind the Leviathan gateway.
 
 | Step | Command | Where |
 | --- | --- | --- |
-| 1. Environment (once) | `bash deploy/slurm/setup_env.sh` | login node |
+| 1. Environment (once) | `sbatch deploy/slurm/setup_env.sbatch` (or `bash deploy/slurm/setup_env.sh`) | `short` partition |
 | 2. Weights (~511 GB, once) | `sbatch deploy/slurm/download_model.sbatch` | `short` partition |
 | 3. Benchmarks | `sbatch --export=ALL,MODE=bench deploy/slurm/h200.sbatch` | `gpu` partition, 8 h |
 | 4. Live demo | `sbatch --export=ALL,MODE=serve deploy/slurm/h200.sbatch`, then `ssh -L 8080:<node>:8080 explorer` | |

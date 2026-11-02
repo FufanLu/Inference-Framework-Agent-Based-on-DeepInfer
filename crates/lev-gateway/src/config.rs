@@ -92,7 +92,7 @@ pub struct RouterSection {
     pub disaggregation: bool,
     pub session_affinity: bool,
     pub shadow_ttl_s: u64,
-    pub default_prefill_us_per_token: f64,
+    pub prefill_us_per_token: f64,
     pub decode_interference_us: f64,
     pub cpu_hit_cost_ratio: f64,
 }
@@ -106,7 +106,7 @@ impl Default for RouterSection {
             disaggregation: defaults.disaggregation,
             session_affinity: defaults.session_affinity,
             shadow_ttl_s: defaults.shadow.ttl.as_secs(),
-            default_prefill_us_per_token: defaults.default_prefill_us_per_token,
+            prefill_us_per_token: defaults.prefill_us_per_token,
             decode_interference_us: defaults.decode_interference_us,
             cpu_hit_cost_ratio: defaults.cpu_hit_cost_ratio,
         }
@@ -126,7 +126,7 @@ impl RouterSection {
                 capacity_blocks: None,
                 ttl: Duration::from_secs(self.shadow_ttl_s),
             },
-            default_prefill_us_per_token: self.default_prefill_us_per_token,
+            prefill_us_per_token: self.prefill_us_per_token,
             decode_interference_us: self.decode_interference_us,
             cpu_hit_cost_ratio: self.cpu_hit_cost_ratio,
             ..RouterConfig::default()
