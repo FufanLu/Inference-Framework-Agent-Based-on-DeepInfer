@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.local
+.impeccable/review/
+.impeccable/live/
+.impeccable/config.local.json

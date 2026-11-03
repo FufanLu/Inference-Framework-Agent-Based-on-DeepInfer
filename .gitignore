@@ -32,3 +32,7 @@ bench/results/**/*.tmp
 # Local dev stack
 .dev/
 bench/results/latest/
+
+# Console build output and review captures
+apps/console/dist/
+apps/console/.impeccable/review/

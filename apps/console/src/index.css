@@ -1,0 +1,386 @@
+@import "tailwindcss";
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/chivo-mono/wght.css";
+
+/*
+ * The live datasheet. Paper and ink, one spot ink (route magenta) reserved for
+ * live routing, state carried by line form as well as hue. Values were checked
+ * for WCAG AA: every text token is >= 4.5:1 on paper, sheet and wash.
+ */
+
+:root {
+  color-scheme: light;
+  --paper: oklch(0.975 0.003 250);
+  --sheet: oklch(1 0 0);
+  --wash: oklch(0.948 0.004 255);
+  --rule: oklch(0.875 0.005 255);
+  --rule-2: oklch(0.8 0.006 255);
+  --ctrl: oklch(0.6 0.01 262);
+  --ink: oklch(0.22 0.012 262);
+  --ink-2: oklch(0.43 0.012 262);
+  --ink-3: oklch(0.53 0.012 262);
+  --route: oklch(0.54 0.235 348);
+  --route-wash: oklch(0.955 0.028 348);
+  --ok: oklch(0.5 0.115 155);
+  --warn: oklch(0.535 0.12 70);
+  --bad: oklch(0.53 0.19 27);
+  --bad-wash: oklch(0.955 0.03 27);
+  --overlay: oklch(0.22 0.012 262 / 0.28);
+  --shadow: 0 12px 32px -12px oklch(0.22 0.02 262 / 0.28), 0 2px 6px -2px oklch(0.22 0.02 262 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: oklch(0.185 0.006 262);
+    --sheet: oklch(0.215 0.007 262);
+    --wash: oklch(0.228 0.007 262);
+    --rule: oklch(0.31 0.007 262);
+    --rule-2: oklch(0.4 0.008 262);
+    --ctrl: oklch(0.53 0.008 262);
+    --ink: oklch(0.925 0.012 88);
+    --ink-2: oklch(0.78 0.01 88);
+    --ink-3: oklch(0.665 0.01 88);
+    --route: oklch(0.73 0.18 350);
+    --route-wash: oklch(0.26 0.05 350);
+    --ok: oklch(0.75 0.13 155);
+    --warn: oklch(0.8 0.13 78);
+    --bad: oklch(0.71 0.16 25);
+    --bad-wash: oklch(0.26 0.05 25);
+    --overlay: oklch(0.1 0.005 262 / 0.6);
+    --shadow: 0 16px 40px -12px oklch(0 0 0 / 0.6), 0 2px 8px -2px oklch(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: oklch(0.185 0.006 262);
+  --sheet: oklch(0.215 0.007 262);
+  --wash: oklch(0.228 0.007 262);
+  --rule: oklch(0.31 0.007 262);
+  --rule-2: oklch(0.4 0.008 262);
+  --ctrl: oklch(0.53 0.008 262);
+  --ink: oklch(0.925 0.012 88);
+  --ink-2: oklch(0.78 0.01 88);
+  --ink-3: oklch(0.665 0.01 88);
+  --route: oklch(0.73 0.18 350);
+  --route-wash: oklch(0.26 0.05 350);
+  --ok: oklch(0.75 0.13 155);
+  --warn: oklch(0.8 0.13 78);
+  --bad: oklch(0.71 0.16 25);
+  --bad-wash: oklch(0.26 0.05 25);
+  --overlay: oklch(0.1 0.005 262 / 0.6);
+  --shadow: 0 16px 40px -12px oklch(0 0 0 / 0.6), 0 2px 8px -2px oklch(0 0 0 / 0.4);
+}
+
+@theme {
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.125rem;
+  --text-3xl--line-height: 2.5rem;
+  --radius-xs: 1px;
+  --radius-sm: 2px;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-wash: var(--wash);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+  --color-ctrl: var(--ctrl);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-route: var(--route);
+  --color-route-wash: var(--route-wash);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-bad-wash: var(--bad-wash);
+  --font-sans: "Archivo Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --font-mono: "Chivo Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+}
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"] *) {
+    @slot;
+  }
+}
+
+/* Condensed Archivo: table headers, parameter names, axis titles, and (tighter) display titles. */
+@utility cond {
+  font-stretch: 80%;
+}
+@utility cond-tight {
+  font-stretch: 75%;
+}
+@utility semicond {
+  font-stretch: 90%;
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--paper);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    caret-color: var(--ink);
+  }
+  ::selection {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-2) transparent;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* Disclosure marker drawn in ink instead of the browser's triangle. */
+  details > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    list-style: none;
+    cursor: pointer;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+  details > summary::before {
+    content: "";
+    flex: none;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid currentColor;
+    transition: transform 150ms var(--ease-out-expo);
+  }
+  details[open] > summary::before {
+    transform: rotate(90deg);
+  }
+}
+
+@layer components {
+  /* 三线表: heavy top and bottom rules, a hairline under the header, nothing else. */
+  .table-3l {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+    border-top: 1.5px solid var(--ink);
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .table-3l > thead > tr > th {
+    font-stretch: 80%;
+    font-weight: 600;
+    font-size: var(--text-xs);
+    line-height: 1rem;
+    color: var(--ink-2);
+    text-align: left;
+    padding: 7px 10px 6px;
+    border-bottom: 0.75px solid var(--ink);
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .table-3l > tbody > tr > td {
+    padding: 6px 10px;
+    font-size: var(--text-sm);
+    line-height: 1.25rem;
+    vertical-align: middle;
+  }
+  .table-3l .num {
+    text-align: right;
+  }
+  .table-3l .unit {
+    font-weight: 400;
+    color: var(--ink-3);
+  }
+
+  /* Rows that open something. */
+  .row-action {
+    cursor: pointer;
+    transition: background-color 150ms var(--ease-out-expo);
+  }
+  .row-action:hover > td {
+    background: var(--wash);
+  }
+  .row-action[aria-selected="true"] > td {
+    background: var(--wash);
+  }
+
+  /* A worker block that just received a routed request. */
+  .worker-card.is-hit {
+    border-color: var(--route);
+    box-shadow: inset 0 0 0 1px var(--route);
+    transition-duration: 0ms;
+  }
+
+  /* Live state as line form: solid live, dashed stale, struck down. */
+  .state-rule {
+    display: inline-block;
+    width: 18px;
+    height: 0;
+    border-top: 2px solid currentColor;
+    vertical-align: middle;
+  }
+  .state-rule[data-state="stale"] {
+    border-top-style: dashed;
+  }
+  .state-rule[data-state="idle"] {
+    border-top-style: dotted;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes sheet-out {
+  from {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    transform: translate(-50%, calc(-50% + 8px));
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+@keyframes row-in {
+  from {
+    background: var(--wash);
+  }
+  to {
+    background: transparent;
+  }
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.anim-sheet[data-state="open"] {
+  animation: sheet-in 220ms var(--ease-out-expo);
+}
+.anim-sheet[data-state="closed"] {
+  animation: sheet-out 160ms ease-in;
+}
+.anim-overlay[data-state="open"] {
+  animation: fade-in 180ms ease-out;
+}
+.anim-overlay[data-state="closed"] {
+  animation: fade-out 140ms ease-in;
+}
+.anim-dialog[data-state="open"] {
+  animation: dialog-in 220ms var(--ease-out-expo);
+}
+.anim-dialog[data-state="closed"] {
+  animation: fade-out 120ms ease-in;
+}
+.anim-row-in > td {
+  animation: row-in 1.2s ease-out;
+}
+.stream-caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: caret 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -70,6 +70,12 @@ The numbers below come from the **sim backend** with a placeholder H200 profile 
 | 4 unified | **160.7 ms** | 8.81 ms | 12.07 ms | 2403 ms | 3153 |
 | 2 prefill + 2 decode | 757.0 ms | **5.64 ms** | **6.64 ms** | **2121 ms** | **3337** |
 
+## Console
+
+[apps/console](apps/console) is the cluster's live datasheet: a block diagram of the gateway and worker pools with every routing decision drawn as it happens, rolling KPIs with their window and sample size, a Prompt Inspector, the request audit with token-level replay, tenants and usage, and an agent studio. English by default, with a 中文 toggle.
+
+![Cluster topology](docs/images/console-cluster.png)
+
 ## Quick start
 
 ```sh
@@ -136,7 +142,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] control plane: tenants, SHA-256-stored API keys, RPM/TPM token buckets (in-process or Redis), monthly quotas, usage ledger (memory or Postgres)
   - [x] audit log, per-request stage timeline, token-level replay; Prometheus metrics and Grafana dashboard
   - [ ] OpenTelemetry export
-- [ ] P5 console and agent studio
+- [x] P5 console and agent studio (Live Datasheet design, English + 中文)
 - [ ] P6 benchmarks on H200: four policies vs `vllm-router`, Pareto curves
 
 ## Development

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Leviathan console: cluster topology, routing decisions, request audit and replay for a DeepSeek-V4.1 serving platform." />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Leviathan Console</title>
+    <script>
+      // Apply the stored theme and language before first paint.
+      try {
+        var t = localStorage.getItem("leviathan.console.theme.v1");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        if (localStorage.getItem("leviathan.console.locale.v1") === "zh") document.documentElement.lang = "zh-CN";
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

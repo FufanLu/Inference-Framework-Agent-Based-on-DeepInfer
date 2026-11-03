@@ -1,0 +1,623 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-03T00:29:46+00:00",
+  "title": "Design System: Leviathan Console",
+  "extensions": {
+    "colorMeta": {
+      "route": {
+        "role": "primary",
+        "displayName": "Route Magenta",
+        "canonical": "oklch(0.54 0.235 348)",
+        "canonicalDark": "oklch(0.73 0.18 350)",
+        "hexApprox": "#c50086",
+        "cssVar": "--route",
+        "tonalRamp": [
+          "oklch(0.15 0.235 348)",
+          "oklch(0.26 0.235 348)",
+          "oklch(0.38 0.235 348)",
+          "oklch(0.50 0.235 348)",
+          "oklch(0.62 0.235 348)",
+          "oklch(0.74 0.235 348)",
+          "oklch(0.85 0.235 348)",
+          "oklch(0.95 0.235 348)"
+        ]
+      },
+      "route-wash": {
+        "role": "primary",
+        "displayName": "Route Wash",
+        "canonical": "oklch(0.955 0.028 348)",
+        "canonicalDark": "oklch(0.26 0.05 350)",
+        "hexApprox": "#ffe9f3",
+        "cssVar": "--route-wash",
+        "tonalRamp": [
+          "oklch(0.15 0.028 348)",
+          "oklch(0.26 0.028 348)",
+          "oklch(0.38 0.028 348)",
+          "oklch(0.50 0.028 348)",
+          "oklch(0.62 0.028 348)",
+          "oklch(0.74 0.028 348)",
+          "oklch(0.85 0.028 348)",
+          "oklch(0.95 0.028 348)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(0.975 0.003 250)",
+        "canonicalDark": "oklch(0.185 0.006 262)",
+        "hexApprox": "#f5f7f9",
+        "cssVar": "--paper",
+        "tonalRamp": [
+          "oklch(0.15 0.003 250)",
+          "oklch(0.26 0.003 250)",
+          "oklch(0.38 0.003 250)",
+          "oklch(0.50 0.003 250)",
+          "oklch(0.62 0.003 250)",
+          "oklch(0.74 0.003 250)",
+          "oklch(0.85 0.003 250)",
+          "oklch(0.95 0.003 250)"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "White Sheet",
+        "canonical": "oklch(1 0 0)",
+        "canonicalDark": "oklch(0.215 0.007 262)",
+        "hexApprox": "#ffffff",
+        "cssVar": "--sheet",
+        "tonalRamp": [
+          "oklch(0.15 0.0 0)",
+          "oklch(0.26 0.0 0)",
+          "oklch(0.38 0.0 0)",
+          "oklch(0.50 0.0 0)",
+          "oklch(0.62 0.0 0)",
+          "oklch(0.74 0.0 0)",
+          "oklch(0.85 0.0 0)",
+          "oklch(0.95 0.0 0)"
+        ]
+      },
+      "wash": {
+        "role": "neutral",
+        "displayName": "Wash",
+        "canonical": "oklch(0.948 0.004 255)",
+        "canonicalDark": "oklch(0.228 0.007 262)",
+        "hexApprox": "#eceef0",
+        "cssVar": "--wash",
+        "tonalRamp": [
+          "oklch(0.15 0.004 255)",
+          "oklch(0.26 0.004 255)",
+          "oklch(0.38 0.004 255)",
+          "oklch(0.50 0.004 255)",
+          "oklch(0.62 0.004 255)",
+          "oklch(0.74 0.004 255)",
+          "oklch(0.85 0.004 255)",
+          "oklch(0.95 0.004 255)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline Rule",
+        "canonical": "oklch(0.875 0.005 255)",
+        "canonicalDark": "oklch(0.31 0.007 262)",
+        "hexApprox": "#d4d6d9",
+        "cssVar": "--rule",
+        "tonalRamp": [
+          "oklch(0.15 0.005 255)",
+          "oklch(0.26 0.005 255)",
+          "oklch(0.38 0.005 255)",
+          "oklch(0.50 0.005 255)",
+          "oklch(0.62 0.005 255)",
+          "oklch(0.74 0.005 255)",
+          "oklch(0.85 0.005 255)",
+          "oklch(0.95 0.005 255)"
+        ]
+      },
+      "rule-2": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "oklch(0.8 0.006 255)",
+        "canonicalDark": "oklch(0.4 0.008 262)",
+        "hexApprox": "#bbbec2",
+        "cssVar": "--rule-2",
+        "tonalRamp": [
+          "oklch(0.15 0.006 255)",
+          "oklch(0.26 0.006 255)",
+          "oklch(0.38 0.006 255)",
+          "oklch(0.50 0.006 255)",
+          "oklch(0.62 0.006 255)",
+          "oklch(0.74 0.006 255)",
+          "oklch(0.85 0.006 255)",
+          "oklch(0.95 0.006 255)"
+        ]
+      },
+      "ctrl": {
+        "role": "neutral",
+        "displayName": "Control Edge",
+        "canonical": "oklch(0.6 0.01 262)",
+        "canonicalDark": "oklch(0.53 0.008 262)",
+        "hexApprox": "#7d8086",
+        "cssVar": "--ctrl",
+        "tonalRamp": [
+          "oklch(0.15 0.01 262)",
+          "oklch(0.26 0.01 262)",
+          "oklch(0.38 0.01 262)",
+          "oklch(0.50 0.01 262)",
+          "oklch(0.62 0.01 262)",
+          "oklch(0.74 0.01 262)",
+          "oklch(0.85 0.01 262)",
+          "oklch(0.95 0.01 262)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.22 0.012 262)",
+        "canonicalDark": "oklch(0.925 0.012 88)",
+        "hexApprox": "#181b20",
+        "cssVar": "--ink",
+        "tonalRamp": [
+          "oklch(0.15 0.012 262)",
+          "oklch(0.26 0.012 262)",
+          "oklch(0.38 0.012 262)",
+          "oklch(0.50 0.012 262)",
+          "oklch(0.62 0.012 262)",
+          "oklch(0.74 0.012 262)",
+          "oklch(0.85 0.012 262)",
+          "oklch(0.95 0.012 262)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "oklch(0.43 0.012 262)",
+        "canonicalDark": "oklch(0.78 0.01 88)",
+        "hexApprox": "#4c5057",
+        "cssVar": "--ink-2",
+        "tonalRamp": [
+          "oklch(0.15 0.012 262)",
+          "oklch(0.26 0.012 262)",
+          "oklch(0.38 0.012 262)",
+          "oklch(0.50 0.012 262)",
+          "oklch(0.62 0.012 262)",
+          "oklch(0.74 0.012 262)",
+          "oklch(0.85 0.012 262)",
+          "oklch(0.95 0.012 262)"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "oklch(0.53 0.012 262)",
+        "canonicalDark": "oklch(0.665 0.01 88)",
+        "hexApprox": "#686c73",
+        "cssVar": "--ink-3",
+        "tonalRamp": [
+          "oklch(0.15 0.012 262)",
+          "oklch(0.26 0.012 262)",
+          "oklch(0.38 0.012 262)",
+          "oklch(0.50 0.012 262)",
+          "oklch(0.62 0.012 262)",
+          "oklch(0.74 0.012 262)",
+          "oklch(0.85 0.012 262)",
+          "oklch(0.95 0.012 262)"
+        ]
+      },
+      "ok": {
+        "role": "signal",
+        "displayName": "Healthy Green",
+        "canonical": "oklch(0.5 0.115 155)",
+        "canonicalDark": "oklch(0.75 0.13 155)",
+        "hexApprox": "#167645",
+        "cssVar": "--ok",
+        "tonalRamp": [
+          "oklch(0.15 0.115 155)",
+          "oklch(0.26 0.115 155)",
+          "oklch(0.38 0.115 155)",
+          "oklch(0.50 0.115 155)",
+          "oklch(0.62 0.115 155)",
+          "oklch(0.74 0.115 155)",
+          "oklch(0.85 0.115 155)",
+          "oklch(0.95 0.115 155)"
+        ]
+      },
+      "warn": {
+        "role": "signal",
+        "displayName": "Amber",
+        "canonical": "oklch(0.535 0.12 70)",
+        "canonicalDark": "oklch(0.8 0.13 78)",
+        "hexApprox": "#985e00",
+        "cssVar": "--warn",
+        "tonalRamp": [
+          "oklch(0.15 0.12 70)",
+          "oklch(0.26 0.12 70)",
+          "oklch(0.38 0.12 70)",
+          "oklch(0.50 0.12 70)",
+          "oklch(0.62 0.12 70)",
+          "oklch(0.74 0.12 70)",
+          "oklch(0.85 0.12 70)",
+          "oklch(0.95 0.12 70)"
+        ]
+      },
+      "bad": {
+        "role": "signal",
+        "displayName": "Fault Red",
+        "canonical": "oklch(0.53 0.19 27)",
+        "canonicalDark": "oklch(0.71 0.16 25)",
+        "hexApprox": "#c22826",
+        "cssVar": "--bad",
+        "tonalRamp": [
+          "oklch(0.15 0.19 27)",
+          "oklch(0.26 0.19 27)",
+          "oklch(0.38 0.19 27)",
+          "oklch(0.50 0.19 27)",
+          "oklch(0.62 0.19 27)",
+          "oklch(0.74 0.19 27)",
+          "oklch(0.85 0.19 27)",
+          "oklch(0.95 0.19 27)"
+        ]
+      },
+      "bad-wash": {
+        "role": "signal",
+        "displayName": "Fault Wash",
+        "canonical": "oklch(0.955 0.03 27)",
+        "canonicalDark": "oklch(0.26 0.05 25)",
+        "hexApprox": "#ffe9e5",
+        "cssVar": "--bad-wash",
+        "tonalRamp": [
+          "oklch(0.15 0.03 27)",
+          "oklch(0.26 0.03 27)",
+          "oklch(0.38 0.03 27)",
+          "oklch(0.50 0.03 27)",
+          "oklch(0.62 0.03 27)",
+          "oklch(0.74 0.03 27)",
+          "oklch(0.85 0.03 27)",
+          "oklch(0.95 0.03 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles, on one line with the page controls; condensed wdth 75."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Drawer and dialog titles; condensed wdth 75."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section and panel headings; condensed wdth 80."
+      },
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "A measured value in a characteristic cell, always with unit and conditions."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base prose and descriptions (max 110ch)."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Table cells, controls, inputs; tabular figures."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers, field labels, parameter names; condensed wdth 80, units in parentheses."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Conditions, footnotes, block footers, tags."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Chivo Mono: IDs, hashes, token IDs, JSON, endpoints, enum values, commands only."
+      }
+    },
+    "themes": {
+      "light": ":root (default)",
+      "dark": "prefers-color-scheme: dark unless [data-theme=light]; or [data-theme=dark]. Same token names, values in colorMeta.*.canonicalDark."
+    },
+    "shadows": [
+      {
+        "name": "overlay",
+        "value": "0 12px 32px -12px oklch(0.22 0.02 262 / 0.28), 0 2px 6px -2px oklch(0.22 0.02 262 / 0.12)",
+        "valueDark": "0 16px 40px -12px oklch(0 0 0 / 0.6), 0 2px 8px -2px oklch(0 0 0 / 0.4)",
+        "purpose": "Drawers and dialogs only, over the --overlay scrim."
+      },
+      {
+        "name": "hit-outline",
+        "value": "inset 0 0 0 1px var(--route)",
+        "purpose": "700ms route-magenta inner stroke on a worker block that just received a routed request; not elevation."
+      }
+    ],
+    "rules": [
+      {
+        "name": "heavy",
+        "value": "1.5px solid var(--ink)",
+        "purpose": "Table top/bottom, page header underline, drawer header, gateway block."
+      },
+      {
+        "name": "standard",
+        "value": "1px",
+        "purpose": "Blocks, controls, dividers."
+      },
+      {
+        "name": "hairline",
+        "value": "0.75px",
+        "purpose": "Table header underline, pool frames, chart frames and grid."
+      }
+    ],
+    "lineForms": [
+      {
+        "name": "live",
+        "value": "solid",
+        "purpose": "Live state; in-use nets."
+      },
+      {
+        "name": "stale",
+        "value": "dasharray 3 2.5 (status mark)",
+        "purpose": "Stale state."
+      },
+      {
+        "name": "kv-handoff",
+        "value": "dasharray 5 3",
+        "purpose": "Prefill to decode KV hand-off net (the only dashed net)."
+      },
+      {
+        "name": "idle",
+        "value": "dasharray 1 2.5 round (mark), 1 3 (nets)",
+        "purpose": "Idle, unused or unhealthy."
+      },
+      {
+        "name": "down",
+        "value": "solid + diagonal strike; struck ID text",
+        "purpose": "Down."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for state transitions, sheet entry, switch thumb, net fades."
+      },
+      {
+        "name": "state-transition",
+        "value": "150ms",
+        "purpose": "Colour/opacity changes on controls, rows, nets (150-250ms band)."
+      },
+      {
+        "name": "sheet-in / sheet-out",
+        "value": "220ms expo-out / 160ms ease-in, 24px translateX",
+        "purpose": "Drawer."
+      },
+      {
+        "name": "overlay-in / overlay-out",
+        "value": "180ms ease-out / 140ms ease-in",
+        "purpose": "Scrim."
+      },
+      {
+        "name": "dialog-in / dialog-out",
+        "value": "220ms expo-out 8px rise / 120ms fade",
+        "purpose": "Dialogs."
+      },
+      {
+        "name": "packet-request-leg",
+        "value": "650ms ease-in-out cubic",
+        "purpose": "Magenta packet gateway to worker, one per real route event, 4-step trail, max 48 in flight."
+      },
+      {
+        "name": "packet-kv-leg",
+        "value": "520ms",
+        "purpose": "Hollow magenta packet on the dashed KV hand-off net."
+      },
+      {
+        "name": "net-highlight",
+        "value": "900ms fade",
+        "purpose": "Chosen net flashes route magenta at 2px."
+      },
+      {
+        "name": "reduced-motion-highlight",
+        "value": "1000ms static",
+        "purpose": "Under prefers-reduced-motion: no packets; chosen net shown in route magenta for 1s, then removed. All CSS animation/transition durations collapse to 0.01ms."
+      },
+      {
+        "name": "hit-outline",
+        "value": "700ms",
+        "purpose": "Worker block route outline."
+      },
+      {
+        "name": "row-in",
+        "value": "1.2s ease-out wash fade",
+        "purpose": "New audit/log rows."
+      },
+      {
+        "name": "caret",
+        "value": "1s steps(1) infinite",
+        "purpose": "Streaming output caret."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "min-supported",
+        "value": "1024px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1536px"
+      }
+    ],
+    "layout": {
+      "sidebar": "220px; 232px from xl",
+      "mainPadding": "24px x, 32px from xl; 20px top, 48px bottom",
+      "sideColumn": "minmax(340px, 400px) from xl",
+      "drawerWidth": "min(760px, 92vw)",
+      "dialogWidth": "min(540px, 92vw)"
+    },
+    "accessibility": "WCAG AA verified: every text token >= 4.5:1 on paper, sheet and wash in both themes (light ink-3 lowest at 4.54:1 on wash); ctrl >= 3:1 (light 3.39:1 on wash, dark 3.22:1 on wash). Focus: 2px ink outline, 2px offset."
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink-filled action; at most one per page.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Replay request</button>",
+      "css": ".ds-btn { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 0.8125rem; font-weight: 500; border: 1px solid; border-radius: 2px; cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; } .ds-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; } .ds-btn-primary { background: var(--ink); border-color: var(--ink); color: var(--paper); } .ds-btn-primary:hover { background: var(--ink-2); border-color: var(--ink-2); } .ds-btn-primary:disabled { background: var(--ink-3); border-color: var(--ink-3); cursor: not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default ruled button on sheet.",
+      "html": "<button class=\"ds-btn2\">Change URL</button>",
+      "css": ".ds-btn2 { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: inline-flex; align-items: center; height: 32px; padding: 0 12px; font-size: 0.8125rem; font-weight: 500; background: var(--sheet); color: var(--ink); border: 1px solid var(--ctrl); border-radius: 2px; cursor: pointer; transition: background-color 150ms ease-out; } .ds-btn2:hover { background: var(--wash); } .ds-btn2:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; } .ds-btn2:disabled { color: var(--ink-3); cursor: not-allowed; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive action: red rule and text on sheet.",
+      "html": "<button class=\"ds-btn-danger\">Revoke key</button>",
+      "css": ".ds-btn-danger { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: inline-flex; align-items: center; height: 32px; padding: 0 12px; font-size: 0.8125rem; font-weight: 500; background: var(--sheet); color: var(--bad); border: 1px solid var(--bad); border-radius: 2px; cursor: pointer; transition: background-color 150ms ease-out; } .ds-btn-danger:hover { background: var(--bad-wash); } .ds-btn-danger:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Condensed label, ruled control, ink focus ring.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-gw\">Gateway URL</label><input id=\"ds-gw\" class=\"ds-input\" placeholder=\"http://localhost:8080\"><p class=\"ds-field-hint\">Admin endpoints are read from here.</p></div>",
+      "css": ".ds-field { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: flex; flex-direction: column; gap: 6px; } .ds-field-label { font-stretch: 80%; font-size: 0.75rem; font-weight: 600; color: var(--ink-2); } .ds-input { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); height: 32px; padding: 0 10px; font-size: 0.8125rem; background: var(--sheet); color: var(--ink); border: 1px solid var(--ctrl); border-radius: 2px; transition: border-color 150ms; } .ds-input::placeholder { color: var(--ink-3); } .ds-input:hover { border-color: var(--ink-3); } .ds-input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); } .ds-input[aria-invalid=true] { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); } .ds-field-hint { margin: 0; font-size: 0.75rem; color: var(--ink-3); }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-cell",
+      "description": "A row of ruled cells; the selected cell is inked. Mono variant for enum values.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Policy\"><button class=\"ds-seg-item\">round_robin</button><button class=\"ds-seg-item\">least_load</button><button class=\"ds-seg-item\">p2c</button><button class=\"ds-seg-item\" aria-pressed=\"true\">cache_aware</button></div>",
+      "css": ".ds-seg { display: inline-flex; background: var(--sheet); border: 1px solid var(--ctrl); border-radius: 2px; } .ds-seg-item { font-family: var(--font-mono, \"Chivo Mono Variable\", ui-monospace, monospace); height: 32px; padding: 0 12px; font-size: 0.75rem; letter-spacing: -0.025em; color: var(--ink-2); background: transparent; border: 0; cursor: pointer; transition: background-color 150ms ease-out, color 150ms ease-out; } .ds-seg-item + .ds-seg-item { border-left: 1px solid var(--rule); } .ds-seg-item:hover { background: var(--wash); color: var(--ink); } .ds-seg-item[aria-pressed=true] { background: var(--ink); color: var(--paper); } .ds-seg-item:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; position: relative; z-index: 1; }"
+    },
+    {
+      "name": "Tags",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Outlined current-colour tags for roles and outcomes.",
+      "html": "<span class=\"ds-tag\" style=\"color: var(--ink-2)\">PREFILL</span> <span class=\"ds-tag\" style=\"color: var(--ok)\">ok</span> <span class=\"ds-tag\" style=\"color: var(--bad)\">error</span>",
+      "css": ".ds-tag { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border: 1px solid currentColor; border-radius: 1px; font-size: 0.6875rem; font-weight: 600; font-stretch: 90%; line-height: 1; white-space: nowrap; }"
+    },
+    {
+      "name": "Status Mark",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "State as line form plus hue: solid live, dashed stale, dotted idle, struck down.",
+      "html": "<span class=\"ds-mark\" style=\"color: var(--ok)\"><svg width=\"18\" height=\"10\"><line x1=\"1\" y1=\"5\" x2=\"17\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>online</span> <span class=\"ds-mark\" style=\"color: var(--warn)\"><svg width=\"18\" height=\"10\"><line x1=\"1\" y1=\"5\" x2=\"17\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-dasharray=\"3 2.5\"/></svg>retrying</span> <span class=\"ds-mark\" style=\"color: var(--ink-3)\"><svg width=\"18\" height=\"10\"><line x1=\"1\" y1=\"5\" x2=\"17\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-dasharray=\"1 2.5\" stroke-linecap=\"round\"/></svg>connecting</span> <span class=\"ds-mark\" style=\"color: var(--bad)\"><svg width=\"18\" height=\"10\"><line x1=\"1\" y1=\"5\" x2=\"17\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"2\"/><line x1=\"5.5\" y1=\"1\" x2=\"12.5\" y2=\"9\" stroke=\"currentColor\" stroke-width=\"1.75\"/></svg>offline</span>",
+      "css": ".ds-mark { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; line-height: 1; margin-right: 12px; }"
+    },
+    {
+      "name": "Three-Line Table",
+      "kind": "custom",
+      "refersTo": "table-header-cell",
+      "description": "三线表: heavy top and bottom rules, hairline under header, no row rules; chosen candidate in route wash.",
+      "html": "<table class=\"ds-t3\"><thead><tr><th>Candidate</th><th class=\"ds-num\">Cached <span class=\"ds-unit\">(tok)</span></th><th class=\"ds-num\">Est. TTFT <span class=\"ds-unit\">(ms)</span></th></tr></thead><tbody><tr class=\"ds-chosen\"><td><span class=\"ds-id\">prefill-1</span></td><td class=\"ds-num\">1,664</td><td class=\"ds-num\">6.0</td></tr><tr><td><span class=\"ds-id\">prefill-0</span></td><td class=\"ds-num\">0</td><td class=\"ds-num\">54</td></tr></tbody></table>",
+      "css": ".ds-t3 { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); color: var(--ink); } .ds-t3 th { font-stretch: 80%; font-weight: 600; font-size: 0.75rem; line-height: 1rem; color: var(--ink-2); text-align: left; padding: 7px 10px 6px; border-bottom: 0.75px solid var(--ink); vertical-align: bottom; white-space: nowrap; } .ds-t3 td { padding: 6px 10px; font-size: 0.8125rem; line-height: 1.25rem; } .ds-t3 .ds-num { text-align: right; } .ds-t3 .ds-unit { font-weight: 400; color: var(--ink-3); } .ds-t3 tbody tr { cursor: pointer; transition: background-color 150ms cubic-bezier(0.16,1,0.3,1); } .ds-t3 tbody tr:hover td { background: var(--wash); } .ds-t3 .ds-id { font-family: var(--font-mono, \"Chivo Mono Variable\", ui-monospace, monospace); font-size: 0.75rem; } .ds-t3 .ds-chosen td { background: var(--route-wash); } .ds-t3 .ds-chosen .ds-id { color: var(--route); font-weight: 600; }"
+    },
+    {
+      "name": "Worker Block with KV Cells",
+      "kind": "card",
+      "refersTo": "",
+      "description": "IC-style worker block: mono ID, role tag, discrete KV block cells; route hit outline on a routed request.",
+      "html": "<div class=\"ds-worker\" tabindex=\"0\"><div class=\"ds-worker-head\"><span class=\"ds-worker-id\">decode-0</span><span class=\"ds-tag2\">DECODE</span></div><div class=\"ds-kv\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"cached\"></i><i class=\"cached\"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>",
+      "css": ".ds-worker { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); background: var(--sheet); border: 1px solid var(--ink); padding: 8px 12px; width: 280px; transition: border-color 200ms, box-shadow 200ms; } .ds-worker:hover, .ds-worker:focus-visible { outline: none; border-color: var(--route); box-shadow: inset 0 0 0 1px var(--route); transition-duration: 0ms; } .ds-worker-head { display: flex; align-items: center; gap: 8px; } .ds-worker-id { font-family: var(--font-mono, \"Chivo Mono Variable\", ui-monospace, monospace); font-size: 0.8125rem; font-weight: 600; color: var(--ink); } .ds-tag2 { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border: 1px solid currentColor; border-radius: 1px; font-size: 0.6875rem; font-weight: 600; font-stretch: 90%; color: var(--ink-2); } .ds-kv { display: flex; gap: 2px; margin-top: 8px; } .ds-kv i { flex: 1; height: 10px; min-width: 4px; border: 1px solid var(--rule-2); } .ds-kv i.on { background: var(--ink); border-color: var(--ink); } .ds-kv i.cached { background: color-mix(in oklch, var(--ink-3) 60%, transparent); border-color: var(--ink-3); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Contents list on wash; active item inked.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item\" href=\"#\">Overview</a><a class=\"ds-nav-item\" aria-current=\"page\" href=\"#\">Cluster <span class=\"ds-nav-count\">4/4</span></a><a class=\"ds-nav-item\" href=\"#\">Playground</a></nav>",
+      "css": ".ds-nav { font-family: var(--font-sans, \"Archivo Variable\", system-ui, sans-serif); display: flex; flex-direction: column; width: 220px; padding: 8px 12px; background: var(--wash); } .ds-nav-item { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 10px; border-radius: 2px; font-size: 0.8125rem; color: var(--ink-2); text-decoration: none; transition: background-color 150ms, color 150ms; } .ds-nav-item:hover { background: color-mix(in oklch, var(--rule) 60%, transparent); color: var(--ink); } .ds-nav-item:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; } .ds-nav-item[aria-current=page] { background: var(--ink); color: var(--paper); } .ds-nav-count { font-family: var(--font-mono, \"Chivo Mono Variable\", ui-monospace, monospace); font-size: 0.6875rem; opacity: 0.8; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Live Datasheet",
+    "overview": "**Creative North Star: \"The Live Datasheet\"**\n\nThe console is printed like an engineering datasheet for a cluster that is running right now. Every figure is a measured characteristic, given with its unit, its conditions, its sample window and its source. Every diagram is a datasheet figure drawn from live API data: a functional block diagram with orthogonal nets, IC-style worker blocks, a figure key set beside it, and characteristic curves on framed, dotted-grid plots. The page reads as cool white paper with near-black ink. The dark theme is a graphite sheet with bone ink and follows the same rules; only the token values change.\n\nDensity follows a technical standard rather than a dashboard. Tables are three-line tables (三线表). Headers are condensed Archivo with the unit in parentheses. Hierarchy comes from rule weight (1.5px heavy, 1px, 0.75px hairline), from condensed width, and from ink depth, not from cards, tints or glow. There is one spot ink, route magenta. It appears only where a routing decision is happening, so the eye can follow a request across the screen.\n\nState never depends on hue alone. The form of a line is the state: solid is live, dashed is stale, dotted is idle or unused, struck is down. The same vocabulary covers status marks, diagram nets, KV cells and pool frames. Motion exists only to show real events: a packet for each real `route` event, a brief hit outline on the worker that received it, and a row flash for new audit entries. Nothing animates on page load.\n\nThe system rejects the category default: dark glowing KPI cards, big-number hero tiles, decorative sparklines.",
+    "keyCharacteristics": [
+      "Paper and ink, with one spot ink (route magenta) reserved for live routing.",
+      "State is carried by line form as well as hue: solid live, dashed stale, dotted idle, struck down.",
+      "Three-line tables: heavy top and bottom rules, a hairline under the header, no row rules, no verticals, no zebra.",
+      "Condensed Archivo (wdth 75 to 80) for titles, headers and parameter names. Archivo at normal width for body text. Chivo Mono only for machine identifiers.",
+      "Square corners (1 to 2px) and thin rules. Shadows appear only on overlays.",
+      "Both themes pass WCAG AA: every text token is at least 4.5:1 on paper, sheet and wash, and control borders are at least 3:1."
+    ],
+    "rules": [
+      {
+        "name": "The Spot Ink Rule",
+        "body": "Route magenta means \"a routing decision is happening here, now\". It never decorates, never marks a link or a primary action, and never shows health. When nothing is being routed, no magenta is on screen.",
+        "section": "colors"
+      },
+      {
+        "name": "The Line Form Rule",
+        "body": "Every state that has a hue also has a line form: solid live, dashed stale, dotted idle or unused, struck down. A status must still read correctly in greyscale.",
+        "section": "colors"
+      },
+      {
+        "name": "The Same Rules, Graphite Sheet Rule",
+        "body": "Dark mode swaps only token values. Bone ink goes on graphite. No component changes structure, weight or accent use between themes.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine Voice Rule",
+        "body": "Chivo Mono is only for strings a machine emits or accepts: IDs, hashes, token IDs, JSON, endpoints, enum values and commands. Prose, labels and numbers set in Archivo.",
+        "section": "typography"
+      },
+      {
+        "name": "The Condensed Header Rule",
+        "body": "Titles, column heads and parameter names are condensed (wdth 75 for titles, 80 for headers and labels). Body text and values are never condensed.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Any column or row of numbers uses tabular figures, right-aligned in tables.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Time Scale Rule",
+        "body": "Charts in one view share one clock-time axis and window, and comparable bars (est. TTFT across candidates) share one axis. That axis is stated in the header.",
+        "section": "layout"
+      },
+      {
+        "name": "The Overlays Only Rule",
+        "body": "A shadow means \"this sheet is lying on top of the page\". Blocks, cells, cards and controls on the page carry rules, not shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** state every figure with its unit, conditions and window. Put units in parentheses in condensed headers.",
+      "**Do** use three-line tables for tabular data: a 1.5px ink rule at top and bottom, a 0.75px hairline under the header, and no row rules.",
+      "**Do** pair every state hue with its line form: solid live, dashed stale, dotted idle or unused, struck down.",
+      "**Do** keep route magenta for live routing (packets, the chosen candidate, highlighted nets, the hit outline), so that seeing it means a decision is happening.",
+      "**Do** set IDs, hashes, token IDs, JSON, endpoints and enum values in Chivo Mono, and everything else in Archivo.",
+      "**Do** use the condensed widths (wdth 75 for titles, 80 for headers and labels) for titles, headers and parameter names.",
+      "**Do** check new text tokens at 4.5:1 or better on paper, sheet and wash in both themes, and new control borders at 3:1 or better.",
+      "**Do** replace packets with a brief static net highlight under `prefers-reduced-motion`, and keep state transitions at 150 to 250ms with expo-out.",
+      "**Do** show a teaching empty state (why there is no data, plus the command that produces some) instead of placeholder figures."
+    ],
+    "donts": [
+      "**Don't** use dark glowing KPI cards, big-number hero tiles or decorative sparklines.",
+      "**Don't** use route magenta for links, primary buttons, brand accents or health status.",
+      "**Don't** dash a data curve or a status line to mean anything except stale. The KV hand-off net is the one dashed net, and dotted chart grid lines are the plot's own furniture.",
+      "**Don't** add row rules, vertical rules or zebra striping to tables.",
+      "**Don't** put shadows on page-level blocks, cells or controls. Shadows belong to drawers and dialogs.",
+      "**Don't** round corners beyond 2px, or put rounding on diagram blocks, frames, tables or cells.",
+      "**Don't** set prose, labels or numbers in the mono face, or condense body text.",
+      "**Don't** animate on page load. Motion only reports real events."
+    ]
+  }
+}

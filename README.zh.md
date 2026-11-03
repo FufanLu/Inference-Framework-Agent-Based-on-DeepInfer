@@ -70,6 +70,12 @@ flowchart TB
 | 4 个 unified | **160.7 ms** | 8.81 ms | 12.07 ms | 2403 ms | 3153 |
 | 2 prefill + 2 decode | 757.0 ms | **5.64 ms** | **6.64 ms** | **2121 ms** | **3337** |
 
+## 控制台
+
+[apps/console](apps/console) 是集群的“实时规格书”：网关与 worker 池的框图，实时画出每一次路由决策；滚动 KPI（标明窗口与样本数）；Prompt Inspector；请求审计与逐 token 重放；租户与用量；agent studio。默认英文，可切换中文。
+
+![集群拓扑](docs/images/console-cluster.png)
+
 ## 快速开始
 
 ```sh
@@ -136,7 +142,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
   - [x] 控制面：租户、SHA-256 存储的 API key、RPM/TPM 令牌桶（进程内或 Redis）、月度配额、用量账本（内存或 Postgres）
   - [x] 审计日志、每请求阶段时间线、逐 token 重放；Prometheus 指标与 Grafana 看板
   - [ ] OpenTelemetry 导出
-- [ ] P5 控制台与 agent studio
+- [x] P5 控制台与 agent studio（“实时规格书”设计，英文 + 中文）
 - [ ] P6 H200 benchmark：4 种策略对比 `vllm-router`，Pareto 曲线
 
 ## 开发

@@ -1,6 +1,7 @@
 # One-command demo: docker compose -f deploy/compose/docker-compose.yml up --build
 #   gateway     http://localhost:8080   (OpenAI / Anthropic compatible API, admin API)
 #   prometheus  http://localhost:9090
+#   console     http://localhost:3000   (web console)
 #   grafana     http://localhost:3001   (anonymous, dashboard "Leviathan")
 name: leviathan
 
@@ -45,6 +46,16 @@ services:
       interval: 5s
       retries: 20
     restart: unless-stopped
+
+  console:
+    build:
+      context: ../../apps/console
+      args:
+        VITE_GATEWAY_URL: http://localhost:8080
+    image: leviathan-console:dev
+    ports:
+      - "3000:80"
+    depends_on: [gateway]
 
   prometheus:
     image: prom/prometheus:v3.1.0
