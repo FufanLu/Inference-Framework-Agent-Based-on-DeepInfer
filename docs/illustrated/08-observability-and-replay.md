@@ -2,7 +2,7 @@
 
 > Code: `crates/lev-gateway/src/pipeline.rs` (`RequestRecord`, `Stage`), `audit.rs`, `metrics.rs`, `events.rs`, `api.rs` (`/admin/stats`, replay)
 > Real data: `scripts/dev.sh unified 4` + 120 agent-shared-prefix requests (`lev-bench --agents 12 --requests 120 --concurrency 12`)
-> Previous: [07 vLLM on H200](07-vllm-on-h200.md)
+> Previous: [07 vLLM on H200](07-vllm-on-h200.md) · Next: [09 Bursts, Kafka and admission control](09-bursts-and-kafka.md)
 
 ## One record per request, four ways to read it
 

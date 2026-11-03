@@ -32,12 +32,17 @@ flowchart TB
         P["策略：round_robin · least_load · p2c · cache_aware"]
         D["PD 配对 · 会话亲和 · 失败重试"]
     end
+    subgraph JQ["异步作业"]
+        K[("Kafka<br/>lev.jobs")]
+        J["作业执行器（消费者组）<br/>按预计 TTFT 放行"]
+    end
     subgraph WK["leviathan-worker (Python · gRPC，token 进 token 出)"]
         V["vllm：H200 上的 DeepSeek-V4.1-Flash"]
         M["sim：模拟引擎（本地 · CI · 演示）"]
         X["deepinfer：适配器（需 SM100，见 docs/deepinfer-status.md）"]
     end
     C --> A --> R --> I --> P --> D
+    C -- "POST /v1/leviathan/jobs" --> K --> J --> R
     D -- "gRPC Generate（流式）" --> WK
     WK -- "KV 事件 + 负载上报" --> I
     WK -- "token 流" --> S --> C
@@ -48,6 +53,7 @@ flowchart TB
 - **网关负责 tokenize，worker 只收发 token ID。** 路由器因此能做 token 级的前缀匹配，用量（含 `reasoning_tokens`）也在同一处计量。
 - **统一的块哈希约定**（见 `proto/leviathan/worker/v1/worker.proto` 文件头）：Rust 路由器和 Python worker 用同一个 xxh3 链式哈希，跨语言测试向量保证两边一致。vLLM 带盐的块哈希在 worker 内翻译成这套约定。
 - **cache-aware 路由就是最小化预计 TTFT**：缓存命中和负载都换算成“预计首 token 时间”，取舍有物理单位，不靠调权重。
+- **突发流量在 Kafka 里排队，而不是堆在引擎里。** 批量任务走 `POST /v1/leviathan/jobs`；Kafka 消费者组里的执行器只在路由器估计的排队时延低于上限时才启动作业，交互请求的延迟因此不受影响，某个网关挂掉后它的作业会转给其他网关。
 - **确定性重放**：每个请求的 token ID、采样参数和 seed 都进审计日志，可以原样重跑，并逐 token 对比两次输出。
 
 ## 目前的结果（sim 后端）
@@ -70,6 +76,17 @@ flowchart TB
 | 4 个 unified | **160.7 ms** | 8.81 ms | 12.07 ms | 2403 ms | 3153 |
 | 2 prefill + 2 decode | 757.0 ms | **5.64 ms** | **6.64 ms** | **2121 ms** | **3337** |
 
+**用 Kafka 吸收突发流量**：4 个副本上跑着 8 个交互客户端，此时一次性涌入 2000 个批量请求（[详情](docs/illustrated/09-bursts-and-kafka.md)）：
+
+| 突发请求的发送方式 | 突发全部完成用时 | 交互 TTFT p99 | 交互请求数/秒 |
+| --- | --- | --- | --- |
+| 无突发 | – | 40.7 ms | 22.4 |
+| 直接打到 `/v1/chat/completions` | 42.4 s | 38 047 ms | 1.0 |
+| 经 Kafka 作业队列，并发 32 / 时延上限 50 ms | 116.1 s | **100.5 ms** | 15.4 |
+| 经 Kafka 作业队列，并发 512 / 时延上限 2000 ms | 44.7 s | 524.0 ms | 2.4 |
+
+两个网关共享同一个队列，突发进行中对其中一个执行 `kill -9`：2000 个作业全部成功，被杀网关上正在执行的 32 个作业由另一个网关重新执行。
+
 ## 控制台
 
 [apps/console](apps/console) 是集群的“实时规格书”：网关与 worker 池的框图，实时画出每一次路由决策；滚动 KPI（标明窗口与样本数）；Prompt Inspector；请求审计与逐 token 重放；租户与用量；agent studio。默认英文，可切换中文。
@@ -88,7 +105,16 @@ scripts/dev.sh stop
 
 网关兼容 OpenAI 和 Anthropic 协议，任何 SDK 都可以直接用：OpenAI 设 `base_url=http://127.0.0.1:8080/v1`，Anthropic 设 `http://127.0.0.1:8080`，模型名 `deepseek-flash`。
 
-Docker：`docker compose -f deploy/compose/docker-compose.yml up --build`，启动 2 prefill + 2 decode sim worker、网关、Prometheus 和 Grafana 看板。
+Docker：`docker compose -f deploy/compose/docker-compose.yml up --build`，启动 2 prefill + 2 decode sim worker、Kafka、网关、控制台、Prometheus 和 Grafana 看板。
+
+异步作业（默认用进程内队列，用 `deploy/local/kafka.toml` 切到 Kafka）：
+
+```sh
+curl -s localhost:8080/v1/leviathan/jobs -H 'content-type: application/json' -d '{"jobs": [
+  {"endpoint": "/v1/chat/completions", "custom_id": "q1",
+   "body": {"model": "deepseek-flash", "messages": [{"role": "user", "content": "Summarize KV caching"}]}}]}'
+curl -s localhost:8080/v1/leviathan/jobs/<id>      # queued → running → succeeded，附带响应
+```
 
 环境要求：Rust ≥ 1.88、Python ≥ 3.10、`protoc`。
 
@@ -105,10 +131,10 @@ Docker：`docker compose -f deploy/compose/docker-compose.yml up --build`，启�
 ```
 proto/                 worker gRPC 协议（唯一的跨语言契约）
 crates/lev-proto       生成的 Rust gRPC 类型
-crates/lev-gateway     多协议网关（deepseek-recipe）、管理 API、审计、指标
+crates/lev-gateway     多协议网关（deepseek-recipe）、管理 API、审计、指标、作业队列（Kafka）
 crates/lev-router      前缀索引、路由策略、PD 配对
 crates/lev-control     租户、API key、限流、配额、用量账本（内存 / Postgres / Redis）
-crates/lev-bench       压测器与策略对比
+crates/lev-bench       压测器、策略对比、突发实验（lev-burst）
 worker/                Python worker：sim / vllm / deepinfer 后端
 apps/console           Web 控制台
 assets/tokenizers/v41  DeepSeek V4.1 tokenizer（MIT，来自 deepseek-recipe，保留原许可声明）
@@ -128,6 +154,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
 6. [模拟引擎](docs/illustrated/06-sim-engine.md)
 7. [H200 上的 vLLM](docs/illustrated/07-vllm-on-h200.md)
 8. [可观测性与重放](docs/illustrated/08-observability-and-replay.md)
+9. [突发流量、Kafka 与准入控制](docs/illustrated/09-bursts-and-kafka.md)：突发实验、Pareto 曲线、杀掉一个网关后的故障转移
 
 ## 路线图
 
@@ -141,6 +168,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
 - [ ] P4 企业功能
   - [x] 控制面：租户、SHA-256 存储的 API key、RPM/TPM 令牌桶（进程内或 Redis）、月度配额、用量账本（内存或 Postgres）
   - [x] 审计日志、每请求阶段时间线、逐 token 重放；Prometheus 指标与 Grafana 看板
+  - [x] 异步作业：Kafka 队列（消费者组、乱序完成也安全的 offset 提交、至少一次投递 + 幂等认领）、按预计 TTFT 准入、引擎优先级
   - [ ] OpenTelemetry 导出
 - [x] P5 控制台与 agent studio（“实时规格书”设计，英文 + 中文）
 - [ ] P6 H200 benchmark：4 种策略对比 `vllm-router`，Pareto 曲线

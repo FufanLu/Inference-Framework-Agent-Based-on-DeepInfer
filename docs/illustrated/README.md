@@ -12,6 +12,7 @@ One request's life ties the whole system together: from a client's `POST /v1/cha
 | [06](06-sim-engine.md) | The simulated engine | Same protocol as vLLM, step-level cost model, real tokens for the real parser | ✅ |
 | [07](07-vllm-on-h200.md) | vLLM on H200 | Same model, another engine; why vLLM's salted hashes are re-hashed; hybrid attention groups | ✅ (measurements pending) |
 | [08](08-observability-and-replay.md) | Observability and replay | One drop settles metrics, audit, usage and live events; stage timelines; token-level replay | ✅ |
+| [09](09-bursts-and-kafka.md) | Bursts, Kafka and admission control | A 2000-request burst sent directly pushes interactive TTFT p99 to 38 s; queued in Kafka and admitted by the router's TTFT model, 103 ms; the knobs trace a Pareto curve; two gateways, one killed, no job lost | ✅ |
 
 Every chapter ends with a "Why it is built this way" section answering the design questions people ask most.
 

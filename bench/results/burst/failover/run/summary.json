@@ -1,0 +1,58 @@
+{
+  "tag": "local-sim-kafka-failover",
+  "mode": "jobs",
+  "duration_s": 1.0,
+  "interactive_clients": 0,
+  "burst": {
+    "requests": 2000,
+    "max_tokens": 256,
+    "at_s": 0.0,
+    "ok": 2000,
+    "errors_by_status": {},
+    "makespan_s": 106.3,
+    "submit_ms_p50": 107.7,
+    "submit_ms_max": 124.4,
+    "first_token_or_start_ms_p50": 48108.0,
+    "first_token_or_start_ms_p99": 103304.0
+  },
+  "interactive": {
+    "requests": 0,
+    "failed": 0,
+    "before_burst": {
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    "during_burst": {
+      "window_s": [
+        0.0,
+        1.0
+      ],
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p90_ms": null,
+      "ttft_p99_ms": null,
+      "ttft_max_ms": null
+    }
+  },
+  "runner": {
+    "enabled": true,
+    "in_flight": 0,
+    "max_in_flight": 32,
+    "max_queue_delay_ms": 50.0,
+    "priority": 1,
+    "waiting_for_headroom": false,
+    "min_queue_delay_ms": {
+      "DeepSeek-V4.1-Flash": 0.0
+    }
+  },
+  "queue": "kafka",
+  "timeline": [
+    {
+      "t": 0,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    }
+  ]
+}

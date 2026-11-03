@@ -1,0 +1,1 @@
+t=20s kill -9 gateway B: finished so far A=231 B=237

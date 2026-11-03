@@ -1,0 +1,412 @@
+{
+  "tag": "local-sim-kafka",
+  "mode": "jobs",
+  "duration_s": 60.0,
+  "interactive_clients": 8,
+  "burst": {
+    "requests": 2000,
+    "max_tokens": 256,
+    "at_s": 19.9,
+    "ok": 2000,
+    "errors_by_status": {},
+    "makespan_s": 44.7,
+    "submit_ms_p50": 99.4,
+    "submit_ms_max": 124.5,
+    "first_token_or_start_ms_p50": 19959.0,
+    "first_token_or_start_ms_p99": 41285.0
+  },
+  "interactive": {
+    "requests": 281,
+    "failed": 0,
+    "before_burst": {
+      "n": 183,
+      "ttft_p50_ms": 32.3,
+      "ttft_p99_ms": 102.9
+    },
+    "during_burst": {
+      "window_s": [
+        19.9,
+        60.0
+      ],
+      "n": 98,
+      "ttft_p50_ms": 264.0,
+      "ttft_p90_ms": 513.0,
+      "ttft_p99_ms": 524.0,
+      "ttft_max_ms": 527.3
+    }
+  },
+  "runner": {
+    "enabled": true,
+    "in_flight": 0,
+    "max_in_flight": 512,
+    "max_queue_delay_ms": 2000.0,
+    "priority": 1,
+    "waiting_for_headroom": false,
+    "min_queue_delay_ms": {
+      "DeepSeek-V4.1-Flash": 0.0
+    }
+  },
+  "queue": "kafka",
+  "timeline": [
+    {
+      "t": 0,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 1,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 2,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 3,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 4,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 5,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 6,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 7,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 8,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 9,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 10,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 11,
+      "n": 8,
+      "ttft_p50_ms": 91.5,
+      "ttft_p99_ms": 134.1
+    },
+    {
+      "t": 12,
+      "n": 16,
+      "ttft_p50_ms": 40.1,
+      "ttft_p99_ms": 85.7
+    },
+    {
+      "t": 13,
+      "n": 24,
+      "ttft_p50_ms": 32.7,
+      "ttft_p99_ms": 47.9
+    },
+    {
+      "t": 14,
+      "n": 23,
+      "ttft_p50_ms": 31.7,
+      "ttft_p99_ms": 40.8
+    },
+    {
+      "t": 15,
+      "n": 23,
+      "ttft_p50_ms": 31.5,
+      "ttft_p99_ms": 36.7
+    },
+    {
+      "t": 16,
+      "n": 23,
+      "ttft_p50_ms": 32.2,
+      "ttft_p99_ms": 39.4
+    },
+    {
+      "t": 17,
+      "n": 22,
+      "ttft_p50_ms": 32.5,
+      "ttft_p99_ms": 36.6
+    },
+    {
+      "t": 18,
+      "n": 23,
+      "ttft_p50_ms": 29.8,
+      "ttft_p99_ms": 37.0
+    },
+    {
+      "t": 19,
+      "n": 22,
+      "ttft_p50_ms": 31.2,
+      "ttft_p99_ms": 40.5
+    },
+    {
+      "t": 20,
+      "n": 2,
+      "ttft_p50_ms": 524.0,
+      "ttft_p99_ms": 524.0
+    },
+    {
+      "t": 21,
+      "n": 3,
+      "ttft_p50_ms": 519.5,
+      "ttft_p99_ms": 527.3
+    },
+    {
+      "t": 22,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 23,
+      "n": 2,
+      "ttft_p50_ms": 518.7,
+      "ttft_p99_ms": 518.7
+    },
+    {
+      "t": 24,
+      "n": 1,
+      "ttft_p50_ms": 524.0,
+      "ttft_p99_ms": 524.0
+    },
+    {
+      "t": 25,
+      "n": 2,
+      "ttft_p50_ms": 510.8,
+      "ttft_p99_ms": 510.8
+    },
+    {
+      "t": 26,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 27,
+      "n": 1,
+      "ttft_p50_ms": 523.0,
+      "ttft_p99_ms": 523.0
+    },
+    {
+      "t": 28,
+      "n": 3,
+      "ttft_p50_ms": 515.8,
+      "ttft_p99_ms": 519.6
+    },
+    {
+      "t": 29,
+      "n": 4,
+      "ttft_p50_ms": 64.0,
+      "ttft_p99_ms": 65.6
+    },
+    {
+      "t": 30,
+      "n": 8,
+      "ttft_p50_ms": 67.3,
+      "ttft_p99_ms": 132.5
+    },
+    {
+      "t": 31,
+      "n": 6,
+      "ttft_p50_ms": 134.0,
+      "ttft_p99_ms": 221.8
+    },
+    {
+      "t": 32,
+      "n": 1,
+      "ttft_p50_ms": 510.4,
+      "ttft_p99_ms": 510.4
+    },
+    {
+      "t": 33,
+      "n": 1,
+      "ttft_p50_ms": 510.8,
+      "ttft_p99_ms": 510.8
+    },
+    {
+      "t": 34,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    },
+    {
+      "t": 35,
+      "n": 2,
+      "ttft_p50_ms": 512.5,
+      "ttft_p99_ms": 512.5
+    },
+    {
+      "t": 36,
+      "n": 1,
+      "ttft_p50_ms": 513.0,
+      "ttft_p99_ms": 513.0
+    },
+    {
+      "t": 37,
+      "n": 3,
+      "ttft_p50_ms": 510.3,
+      "ttft_p99_ms": 512.4
+    },
+    {
+      "t": 38,
+      "n": 1,
+      "ttft_p50_ms": 481.5,
+      "ttft_p99_ms": 481.5
+    },
+    {
+      "t": 39,
+      "n": 1,
+      "ttft_p50_ms": 332.0,
+      "ttft_p99_ms": 332.0
+    },
+    {
+      "t": 40,
+      "n": 4,
+      "ttft_p50_ms": 309.4,
+      "ttft_p99_ms": 333.6
+    },
+    {
+      "t": 41,
+      "n": 6,
+      "ttft_p50_ms": 72.8,
+      "ttft_p99_ms": 133.3
+    },
+    {
+      "t": 42,
+      "n": 5,
+      "ttft_p50_ms": 117.7,
+      "ttft_p99_ms": 200.2
+    },
+    {
+      "t": 43,
+      "n": 3,
+      "ttft_p50_ms": 197.5,
+      "ttft_p99_ms": 330.4
+    },
+    {
+      "t": 44,
+      "n": 1,
+      "ttft_p50_ms": 329.9,
+      "ttft_p99_ms": 329.9
+    },
+    {
+      "t": 45,
+      "n": 3,
+      "ttft_p50_ms": 336.2,
+      "ttft_p99_ms": 512.7
+    },
+    {
+      "t": 46,
+      "n": 1,
+      "ttft_p50_ms": 511.5,
+      "ttft_p99_ms": 511.5
+    },
+    {
+      "t": 47,
+      "n": 2,
+      "ttft_p50_ms": 512.6,
+      "ttft_p99_ms": 512.6
+    },
+    {
+      "t": 48,
+      "n": 2,
+      "ttft_p50_ms": 479.2,
+      "ttft_p99_ms": 479.2
+    },
+    {
+      "t": 49,
+      "n": 1,
+      "ttft_p50_ms": 399.0,
+      "ttft_p99_ms": 399.0
+    },
+    {
+      "t": 50,
+      "n": 2,
+      "ttft_p50_ms": 381.8,
+      "ttft_p99_ms": 381.8
+    },
+    {
+      "t": 51,
+      "n": 1,
+      "ttft_p50_ms": 396.0,
+      "ttft_p99_ms": 396.0
+    },
+    {
+      "t": 52,
+      "n": 7,
+      "ttft_p50_ms": 84.1,
+      "ttft_p99_ms": 154.0
+    },
+    {
+      "t": 53,
+      "n": 4,
+      "ttft_p50_ms": 183.4,
+      "ttft_p99_ms": 199.4
+    },
+    {
+      "t": 54,
+      "n": 3,
+      "ttft_p50_ms": 265.3,
+      "ttft_p99_ms": 265.4
+    },
+    {
+      "t": 55,
+      "n": 3,
+      "ttft_p50_ms": 189.8,
+      "ttft_p99_ms": 198.9
+    },
+    {
+      "t": 56,
+      "n": 2,
+      "ttft_p50_ms": 332.4,
+      "ttft_p99_ms": 332.4
+    },
+    {
+      "t": 57,
+      "n": 2,
+      "ttft_p50_ms": 464.0,
+      "ttft_p99_ms": 464.0
+    },
+    {
+      "t": 58,
+      "n": 3,
+      "ttft_p50_ms": 399.9,
+      "ttft_p99_ms": 449.7
+    },
+    {
+      "t": 59,
+      "n": 0,
+      "ttft_p50_ms": null,
+      "ttft_p99_ms": null
+    }
+  ]
+}

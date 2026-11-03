@@ -32,12 +32,17 @@ flowchart TB
         P["policies: round_robin · least_load · p2c · cache_aware"]
         D["PD pairing · session affinity · failover"]
     end
+    subgraph JQ["async jobs"]
+        K[("Kafka<br/>lev.jobs")]
+        J["job runners (consumer group)<br/>admitted by estimated TTFT"]
+    end
     subgraph WK["leviathan-worker (Python · gRPC, token IDs in and out)"]
         V["vllm: DeepSeek-V4.1-Flash on H200"]
         M["sim: simulated engine (local · CI · demo)"]
         X["deepinfer: adapter (needs SM100, see docs/deepinfer-status.md)"]
     end
     C --> A --> R --> I --> P --> D
+    C -- "POST /v1/leviathan/jobs" --> K --> J --> R
     D -- "gRPC Generate (stream)" --> WK
     WK -- "KV events + load reports" --> I
     WK -- "token stream" --> S --> C
@@ -48,6 +53,7 @@ Design points:
 - **The gateway tokenizes; workers only see token IDs.** The router can therefore compute token-level prefix matches, and usage (including `reasoning_tokens`) is metered in one place.
 - **One block-hash convention** (header of `proto/leviathan/worker/v1/worker.proto`): a chained xxh3 hash shared by the Rust router and the Python workers, pinned by a cross-language test vector. vLLM's salted block hashes are translated into it inside the worker.
 - **Cache-aware routing is TTFT minimization**: cache hits and load are both converted into estimated time to first token, so the trade-off has a physical unit instead of a tuning weight.
+- **Bursts wait in Kafka, not in the engines.** Batch work goes to `POST /v1/leviathan/jobs`; runners in a Kafka consumer group start a job only while the router's estimated queueing delay stays under a bound, so interactive requests keep their latency and a dead gateway's jobs move to another.
 - **Deterministic replay**: every request's token IDs, sampling parameters and seed are in the audit log, so a request can be re-run and diffed token by token.
 
 ## Results so far (sim backend)
@@ -70,6 +76,17 @@ The numbers below come from the **sim backend** with a placeholder H200 profile 
 | 4 unified | **160.7 ms** | 8.81 ms | 12.07 ms | 2403 ms | 3153 |
 | 2 prefill + 2 decode | 757.0 ms | **5.64 ms** | **6.64 ms** | **2121 ms** | **3337** |
 
+**Bursts through Kafka**: 8 interactive clients on 4 replicas, then 2000 batch requests at once ([details](docs/illustrated/09-bursts-and-kafka.md)):
+
+| Burst sent as | Burst finished in | Interactive TTFT p99 | Interactive req/s |
+| --- | --- | --- | --- |
+| no burst | – | 40.7 ms | 22.4 |
+| directly to `/v1/chat/completions` | 42.4 s | 38 047 ms | 1.0 |
+| jobs via Kafka, 32 in flight / 50 ms bound | 116.1 s | **100.5 ms** | 15.4 |
+| jobs via Kafka, 512 in flight / 2000 ms bound | 44.7 s | 524.0 ms | 2.4 |
+
+Two gateways sharing the queue, one killed with `kill -9` mid-burst: all 2000 jobs succeeded; the 32 it had in flight ran again on the other.
+
 ## Console
 
 [apps/console](apps/console) is the cluster's live datasheet: a block diagram of the gateway and worker pools with every routing decision drawn as it happens, rolling KPIs with their window and sample size, a Prompt Inspector, the request audit with token-level replay, tenants and usage, and an agent studio. English by default, with a 中文 toggle.
@@ -88,7 +105,16 @@ scripts/dev.sh stop
 
 The gateway speaks the OpenAI and Anthropic APIs, so any SDK works with `base_url=http://127.0.0.1:8080/v1` (OpenAI) or `http://127.0.0.1:8080` (Anthropic) and model `deepseek-flash`.
 
-With Docker: `docker compose -f deploy/compose/docker-compose.yml up --build` starts 2 prefill + 2 decode sim workers, the gateway, Prometheus and a Grafana dashboard.
+With Docker: `docker compose -f deploy/compose/docker-compose.yml up --build` starts 2 prefill + 2 decode sim workers, Kafka, the gateway, the console, Prometheus and a Grafana dashboard.
+
+Asynchronous jobs (in-process queue by default, Kafka with `deploy/local/kafka.toml`):
+
+```sh
+curl -s localhost:8080/v1/leviathan/jobs -H 'content-type: application/json' -d '{"jobs": [
+  {"endpoint": "/v1/chat/completions", "custom_id": "q1",
+   "body": {"model": "deepseek-flash", "messages": [{"role": "user", "content": "Summarize KV caching"}]}}]}'
+curl -s localhost:8080/v1/leviathan/jobs/<id>      # queued → running → succeeded, with the response
+```
 
 Requirements: Rust ≥ 1.88, Python ≥ 3.10, `protoc`.
 
@@ -105,10 +131,10 @@ Requirements: Rust ≥ 1.88, Python ≥ 3.10, `protoc`.
 ```
 proto/                 worker gRPC protocol (the only cross-language contract)
 crates/lev-proto       generated Rust gRPC types
-crates/lev-gateway     multi-protocol gateway (deepseek-recipe), admin API, audit, metrics
+crates/lev-gateway     multi-protocol gateway (deepseek-recipe), admin API, audit, metrics, job queue (Kafka)
 crates/lev-router      prefix index, routing policies, PD pairing
 crates/lev-control     tenants, API keys, rate limits, quotas, usage ledger (memory / Postgres / Redis)
-crates/lev-bench       load generator and policy comparison
+crates/lev-bench       load generator, policy comparison, burst experiment (lev-burst)
 worker/                Python workers: sim / vllm / deepinfer backends
 apps/console           web console
 assets/tokenizers/v41  DeepSeek V4.1 tokenizer (MIT, from deepseek-recipe; notice kept)
@@ -128,6 +154,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 6. [The simulated engine](docs/illustrated/06-sim-engine.md)
 7. [vLLM on H200](docs/illustrated/07-vllm-on-h200.md)
 8. [Observability and replay](docs/illustrated/08-observability-and-replay.md)
+9. [Bursts, Kafka and admission control](docs/illustrated/09-bursts-and-kafka.md): the burst experiment, the Pareto curve, failover with a killed gateway
 
 ## Roadmap
 
@@ -141,6 +168,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 - [ ] P4 enterprise features
   - [x] control plane: tenants, SHA-256-stored API keys, RPM/TPM token buckets (in-process or Redis), monthly quotas, usage ledger (memory or Postgres)
   - [x] audit log, per-request stage timeline, token-level replay; Prometheus metrics and Grafana dashboard
+  - [x] asynchronous jobs: Kafka queue (consumer group, out-of-order-safe offset commits, at-least-once with idempotent claims), admission by estimated TTFT, engine priority
   - [ ] OpenTelemetry export
 - [x] P5 console and agent studio (Live Datasheet design, English + 中文)
 - [ ] P6 benchmarks on H200: four policies vs `vllm-router`, Pareto curves
