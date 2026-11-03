@@ -384,15 +384,15 @@ function ClusterSummary() {
         </div>
       ) : (
         <>
-          <table className="table-3l">
+          <table className="table-3l table-fixed">
             <thead>
               <tr>
-                <th>{k.worker}</th>
-                <th>{k.role}</th>
-                <th>{k.state}</th>
-                <th className="w-[30%]">{k.kv}</th>
-                <th className="num">{k.seqs}</th>
-                <th className="num">{k.inflight}</th>
+                <th className="w-[26%]">{k.worker}</th>
+                <th className="w-[19%]">{k.role}</th>
+                <th className="w-[9%]">{k.state}</th>
+                <th>{k.kv}</th>
+                <th className="num w-[13%]">{k.seqs}</th>
+                <th className="num w-[12%]">{k.inflight}</th>
               </tr>
             </thead>
             <tbody>
@@ -403,14 +403,22 @@ function ClusterSummary() {
                     <RoleTag role={worker.role} />
                   </td>
                   <td>
-                    <StatusMark {...workerLineState(worker, t)} />
+                    {(() => {
+                      const line = workerLineState(worker, t);
+                      return (
+                        <span title={line.label}>
+                          <StatusMark state={line.state} tone={line.tone} />
+                          <span className="sr-only">{line.label}</span>
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div className="flex items-center gap-2">
                       <KvCells
                         usage={worker.load_age_ms === null ? null : worker.load.kv_usage}
                         cached={worker.total_blocks > 0 && worker.index_source !== "off" ? worker.gpu_blocks / worker.total_blocks : null}
-                        cells={10}
+                        cells={8}
                         size="sm"
                         className="flex-1"
                       />

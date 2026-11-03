@@ -141,8 +141,11 @@ function Decision({ route, stages, t }: { route: RouteEvent; stages: StageEvent[
       k.facts.stages,
       prefillDone ? (
         <span className="inline-flex flex-wrap gap-x-1 text-xs">
-          <span className="whitespace-nowrap">{k.handoff(fmtInt(prefillDone.transferred_tokens), fmtMs(prefillDone.duration_ms).replace(" ", "\u00a0"))}</span>
-          {decodeReady ? <span className="whitespace-nowrap">· {k.decodeReady(fmtMs(decodeReady.duration_ms).replace(" ", "\u00a0"))}</span> : null}
+          <span className="whitespace-nowrap">
+            {k.handoff(fmtInt(prefillDone.transferred_tokens), fmtMs(prefillDone.duration_ms).replace(" ", "\u00a0"))}
+            {decodeReady ? " ·" : ""}
+          </span>
+          {decodeReady ? <span className="whitespace-nowrap">{k.decodeReady(fmtMs(decodeReady.duration_ms).replace(" ", "\u00a0"))}</span> : null}
         </span>
       ) : (
         <span className="text-ink-3">{k.stagesPending}</span>
