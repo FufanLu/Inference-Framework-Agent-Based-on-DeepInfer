@@ -151,6 +151,24 @@ pub async fn admit(state: &AppState, tenant: &Tenant) -> Result<(), ApiError> {
     })
 }
 
+/// Admit a job submission: only the tenant's monthly quota applies.
+pub async fn admit_job(state: &AppState, tenant: &Tenant) -> Result<(), ApiError> {
+    state.control.admit_job(tenant).await.map_err(|throttle| {
+        metrics::counter!(
+            "lev_throttled_total",
+            "tenant" => tenant.id.clone(),
+            "reason" => "quota",
+        )
+        .increment(1);
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            ErrorKind::RateLimited,
+            "insufficient_quota",
+            throttle.to_string(),
+        )
+    })
+}
+
 /// A request that has been converted, rendered and tokenized.
 pub struct Prepared {
     pub request_id: Uuid,

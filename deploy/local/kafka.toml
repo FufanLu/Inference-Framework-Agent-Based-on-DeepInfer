@@ -1,0 +1,13 @@
+# Local gateway with the Kafka job queue. With a broker on 127.0.0.1:9092
+# (e.g. `docker run -d -p 9092:9092 apache/kafka:4.1.0`):
+#   LEV_CONFIG=deploy/local/kafka.toml scripts/dev.sh unified 4
+[jobs]
+queue = "kafka"
+max_in_flight = 32
+max_queue_delay_ms = 50
+
+[jobs.kafka]
+brokers = "127.0.0.1:9092"
+topic = "lev.jobs"
+group = "lev-job-runners"
+partitions = 12

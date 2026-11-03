@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -682,6 +682,34 @@ impl Router {
                 entries,
             },
         })
+    }
+
+    /// The lowest estimated queueing delay a new, fully cached request for
+    /// `model` would see on any healthy worker that takes new requests
+    /// (unified or prefill): the cache-aware cost model without the request's
+    /// own prefill. `None` when no such worker is up.
+    ///
+    /// Admission control for background work: the job runner starts a job
+    /// only while this stays under a bound, so queued jobs fill idle capacity
+    /// without pushing interactive requests' TTFT up.
+    pub fn min_queue_delay(&self, model: &str) -> Option<Duration> {
+        let inner = self.inner.lock();
+        let config = &inner.config;
+        inner
+            .slots
+            .iter()
+            .flatten()
+            .filter(|worker| {
+                worker.healthy
+                    && worker.meta.model == model
+                    && matches!(worker.meta.role, Role::Unified | Role::Prefill)
+            })
+            .map(|worker| {
+                worker.pending_prefill_tokens as f64 * config.prefill_us_per_token
+                    + config.decode_interference_us * f64::from(worker.sequences())
+            })
+            .min_by(f64::total_cmp)
+            .map(|us| Duration::from_micros(us.max(0.0) as u64))
     }
 
     /// The router's view of every worker.

@@ -26,6 +26,8 @@ pub struct Config {
     pub dispatch: DispatchConfig,
     #[serde(default)]
     pub audit: AuditConfig,
+    #[serde(default)]
+    pub jobs: JobsConfig,
 }
 
 fn default_listen() -> String {
@@ -229,6 +231,84 @@ impl Default for AuditConfig {
     }
 }
 
+/// Asynchronous jobs: requests accepted now and run when the cluster has
+/// room, so a burst is queued instead of piling onto the engines.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct JobsConfig {
+    pub enabled: bool,
+    /// `memory` (in-process, lost on restart) or `kafka`.
+    pub queue: String,
+    /// This gateway runs jobs from the queue. Gateways that only accept
+    /// jobs set it to false.
+    pub run: bool,
+    /// Jobs this gateway runs at once: the hard bound on what a burst can add.
+    pub max_in_flight: usize,
+    /// A job starts only while some worker's estimated queueing delay
+    /// (the router's TTFT model) is below this: interactive traffic keeps
+    /// priority and jobs fill idle capacity.
+    pub max_queue_delay_ms: u64,
+    /// Engine scheduling priority of job requests (interactive requests use
+    /// 0; larger runs later on engines that schedule by priority).
+    pub priority: i32,
+    /// Runs of one job before it fails, when the engines fail it (5xx).
+    pub max_attempts: u32,
+    /// Jobs per submission.
+    pub max_batch: usize,
+    /// Capacity of the in-process queue.
+    pub memory_capacity: usize,
+    pub kafka: KafkaConfig,
+}
+
+impl Default for JobsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            queue: "memory".to_string(),
+            run: true,
+            max_in_flight: 32,
+            max_queue_delay_ms: 50,
+            priority: 1,
+            max_attempts: 3,
+            max_batch: 10_000,
+            memory_capacity: 100_000,
+            kafka: KafkaConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct KafkaConfig {
+    /// Bootstrap servers, comma-separated.
+    pub brokers: String,
+    pub topic: String,
+    /// Consumer group of the job runners: each job runs on one of them.
+    pub group: String,
+    /// Partitions of the topic when the gateway creates it; the upper bound
+    /// on runners that share the work.
+    pub partitions: i32,
+    pub replication_factor: i32,
+    pub client_id: String,
+    /// Extra librdkafka properties (security, tuning), applied to the
+    /// producer and the consumer.
+    pub properties: std::collections::BTreeMap<String, String>,
+}
+
+impl Default for KafkaConfig {
+    fn default() -> Self {
+        Self {
+            brokers: "127.0.0.1:9092".to_string(),
+            topic: "lev.jobs".to_string(),
+            group: "lev-job-runners".to_string(),
+            partitions: 12,
+            replication_factor: 1,
+            client_id: "lev-gateway".to_string(),
+            properties: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -240,6 +320,7 @@ impl Default for Config {
             control: ControlConfig::default(),
             dispatch: DispatchConfig::default(),
             audit: AuditConfig::default(),
+            jobs: JobsConfig::default(),
         }
     }
 }

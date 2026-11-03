@@ -110,3 +110,72 @@ async fn redis_limiter_is_shared_and_refills() {
     b.debit(&key, 500.0, 120).await;
     assert!(a.available(&key, 120).await < 0.0);
 }
+
+/// Job claims in both stores: queued and redelivered running jobs may run,
+/// finished jobs may not.
+async fn job_lifecycle(store: &dyn Store) {
+    use lev_control::{JobOutcome, JobRecord, JobStatus};
+    let tenant = format!("t-{}", uuid::Uuid::new_v4().simple());
+    let jobs: Vec<JobRecord> = (0..3)
+        .map(|i| {
+            JobRecord::queued(
+                uuid::Uuid::now_v7(),
+                &tenant,
+                Some(format!("c{i}")),
+                "/v1/chat/completions",
+            )
+        })
+        .collect();
+    store.insert_jobs(&jobs).await.unwrap();
+    // Inserting again (a retried submission) changes nothing.
+    store.insert_jobs(&jobs[..1]).await.unwrap();
+    let id = jobs[0].id;
+    assert_eq!(
+        store.get_job(id).await.unwrap().unwrap().status,
+        JobStatus::Queued
+    );
+
+    let claimed = store.claim_job(id).await.unwrap().unwrap();
+    assert_eq!((claimed.status, claimed.attempts), (JobStatus::Running, 1));
+    assert!(claimed.started_at.is_some());
+    // Redelivered while running (its runner died): it may run again.
+    assert_eq!(store.claim_job(id).await.unwrap().unwrap().attempts, 2);
+
+    let outcome = JobOutcome {
+        status: JobStatus::Succeeded,
+        request_id: Some("req-1".into()),
+        response_status: Some(200),
+        response: Some(serde_json::json!({"ok": true})),
+        error: None,
+    };
+    store.finish_job(id, &outcome).await.unwrap();
+    let done = store.get_job(id).await.unwrap().unwrap();
+    assert_eq!(done.status, JobStatus::Succeeded);
+    assert_eq!(done.response, Some(serde_json::json!({"ok": true})));
+    assert_eq!(done.custom_id.as_deref(), Some("c0"));
+    // Finished: a redelivery must not run it again.
+    assert!(store.claim_job(id).await.unwrap().is_none());
+    assert!(
+        store
+            .claim_job(uuid::Uuid::now_v7())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let counts = store.job_counts().await.unwrap();
+    assert!(counts.succeeded >= 1 && counts.queued >= 2, "{counts:?}");
+}
+
+#[tokio::test]
+async fn memory_store_job_lifecycle() {
+    job_lifecycle(&lev_control::MemoryStore::new()).await;
+}
+
+#[tokio::test]
+async fn postgres_store_job_lifecycle() {
+    let Some(url) = env("LEV_TEST_DATABASE_URL") else {
+        eprintln!("LEV_TEST_DATABASE_URL not set; skipping");
+        return;
+    };
+    job_lifecycle(&PgStore::connect(&url).await.unwrap()).await;
+}

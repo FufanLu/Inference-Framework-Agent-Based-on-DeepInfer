@@ -11,6 +11,7 @@ pub mod audit;
 pub mod config;
 pub mod error;
 pub mod events;
+pub mod jobs;
 pub mod metrics;
 pub mod model;
 pub mod pipeline;

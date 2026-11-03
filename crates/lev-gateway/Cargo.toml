@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = ["kafka"]
+# Kafka job queue (builds librdkafka from source: needs a C toolchain).
+kafka = ["dep:rdkafka"]
+
 [dependencies]
 lev-proto = { workspace = true }
 lev-router = { workspace = true }
@@ -38,6 +43,8 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
+async-trait = { workspace = true }
+rdkafka = { version = "0.39", optional = true, features = ["tokio"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

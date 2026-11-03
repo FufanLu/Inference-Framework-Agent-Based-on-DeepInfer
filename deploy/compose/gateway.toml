@@ -1,5 +1,5 @@
 # Gateway configuration for the docker compose demo: two prefill and two
-# decode sim workers.
+# decode sim workers, asynchronous jobs on Kafka.
 listen = "0.0.0.0:8080"
 
 [[models]]
@@ -22,3 +22,16 @@ endpoint = "http://prefill-1:50051"
 endpoint = "http://decode-0:50051"
 [[workers]]
 endpoint = "http://decode-1:50051"
+
+# Asynchronous jobs (POST /v1/leviathan/jobs) queue in Kafka and run while
+# the cluster has room. Every gateway replica in the group shares the work.
+[jobs]
+queue = "kafka"
+max_in_flight = 32
+max_queue_delay_ms = 50
+
+[jobs.kafka]
+brokers = "kafka:9092"
+topic = "lev.jobs"
+group = "lev-job-runners"
+partitions = 12

@@ -1,0 +1,18 @@
+# Several gateways sharing one job queue and one job store: run two with
+# different --listen ports and the same workers; jobs submitted to either
+# run on both, and either can answer for any job.
+#   docker run -d -p 9092:9092 apache/kafka:4.1.0
+#   docker run -d -p 55432:5432 -e POSTGRES_USER=lev -e POSTGRES_PASSWORD=lev -e POSTGRES_DB=lev postgres:16-alpine
+[control]
+store = "postgres://lev:lev@127.0.0.1:55432/lev"
+
+[jobs]
+queue = "kafka"
+max_in_flight = 32
+max_queue_delay_ms = 50
+
+[jobs.kafka]
+brokers = "127.0.0.1:9092"
+topic = "lev.jobs"
+group = "lev-job-runners"
+partitions = 12

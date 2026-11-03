@@ -23,6 +23,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tower_http::cors::CorsLayer;
 
 use crate::error::{ApiError, ErrorKind};
+use crate::jobs;
 use crate::pipeline::{self, DispatchInput, ProtocolChunk};
 use crate::protocol::ProtocolInfo;
 use crate::state::AppState;
@@ -38,6 +39,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/models", get(list_models))
         .route("/v1/leviathan/render", post(render))
         .route("/v1/leviathan/detokenize", post(detokenize))
+        .route(
+            "/v1/leviathan/jobs",
+            post(submit_jobs).layer(axum::extract::DefaultBodyLimit::max(JOB_BODY_LIMIT)),
+        )
+        .route("/v1/leviathan/jobs/{id}", get(get_job))
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(ready))
         .route("/metrics", get(metrics))
@@ -54,8 +60,128 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/keys/{id}", axum::routing::delete(revoke_key))
         .route("/admin/usage", get(usage))
         .route("/admin/stats", get(stats))
+        .route("/admin/jobs", get(jobs_stats).put(update_jobs))
         .layer(CorsLayer::permissive())
         .with_state(state)
+}
+
+/// Largest job submission body: a batch of long prompts.
+const JOB_BODY_LIMIT: usize = 64 << 20;
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum SubmitBody {
+    Batch { jobs: Vec<jobs::JobSubmission> },
+    One(jobs::JobSubmission),
+}
+
+/// An error in the OpenAI error format, with `Retry-After` when it has one.
+fn json_error(error: ApiError) -> Response {
+    let mut response = (error.status, Json(error.openai_body())).into_response();
+    if let Some(after) = error.retry_after {
+        let seconds = after.as_secs_f64().ceil().max(1.0) as u64;
+        if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
+        }
+    }
+    response
+}
+
+/// `POST /v1/leviathan/jobs`: one job (`{endpoint, body, custom_id?}`) or a
+/// batch (`{"jobs": [...]}`). Answers `202 Accepted` once every job is queued.
+async fn submit_jobs(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+    let tenant = match pipeline::authenticate(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(error) => return json_error(error),
+    };
+    let parsed: SubmitBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            return json_error(ApiError::bad_request(
+                "invalid_request_error",
+                format!(
+                    "expected {{\"endpoint\", \"body\", \"custom_id\"?}} or {{\"jobs\": [...]}}: {error}"
+                ),
+            ));
+        }
+    };
+    let (batch, submissions) = match parsed {
+        SubmitBody::Batch { jobs } => (true, jobs),
+        SubmitBody::One(job) => (false, vec![job]),
+    };
+    match jobs::submit(&state, &tenant, submissions).await {
+        Ok(records) => {
+            let body = if batch {
+                json!({
+                    "object": "list",
+                    "data": records.iter().map(jobs::job_json).collect::<Vec<_>>(),
+                })
+            } else {
+                jobs::job_json(&records[0])
+            };
+            (StatusCode::ACCEPTED, Json(body)).into_response()
+        }
+        Err(error) => json_error(error),
+    }
+}
+
+/// `GET /v1/leviathan/jobs/{id}`: a job of the caller's tenant.
+async fn get_job(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let tenant = match pipeline::authenticate(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(error) => return json_error(error),
+    };
+    let not_found = || {
+        json_error(ApiError::new(
+            StatusCode::NOT_FOUND,
+            ErrorKind::NotFound,
+            "job_not_found",
+            format!("no job `{id}`"),
+        ))
+    };
+    let Ok(uuid) = id.parse::<uuid::Uuid>() else {
+        return not_found();
+    };
+    match state.control.store().get_job(uuid).await {
+        Ok(Some(job)) if job.tenant_id == tenant.id => Json(jobs::job_json(&job)).into_response(),
+        Ok(_) => not_found(),
+        Err(error) => json_error(ApiError::overloaded(format!(
+            "reading the job failed: {error}"
+        ))),
+    }
+}
+
+async fn jobs_stats(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    Json(jobs::stats(&state).await).into_response()
+}
+
+/// `PUT /admin/jobs`: change the runner's limits at runtime, e.g. open the
+/// tap at night (`{"max_in_flight": 256, "max_queue_delay_ms": 500}`).
+async fn update_jobs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(update): Json<jobs::RunnerUpdate>,
+) -> Response {
+    if let Err(error) = authorize_admin(&state, &headers) {
+        return admin_error(error);
+    }
+    let Some(runner) = state.jobs.as_ref() else {
+        return admin_error(ApiError::new(
+            StatusCode::NOT_FOUND,
+            ErrorKind::NotFound,
+            "jobs_disabled",
+            "asynchronous jobs are not enabled on this gateway",
+        ));
+    };
+    runner.update(update);
+    Json(jobs::stats(&state).await).into_response()
 }
 
 async fn protocol_handler<T>(

@@ -329,7 +329,7 @@ class SimEngine(Engine):
             arrival=time.monotonic(),
         )
         self._requests[r.id] = r
-        self._waiting.append(r)
+        self._enqueue(r)
         self._wakeup.set()
         log.debug(
             "request queued",
@@ -462,6 +462,21 @@ class SimEngine(Engine):
         if prefill_tokens:
             duration += p.prefill_us_per_token * prefill_tokens + (0.0 if decode else p.prefill_base_us)
         return _Step(decode=decode, prefill=prefill, duration_us=duration)
+
+    def _enqueue(self, r: _SimRequest) -> None:
+        """FIFO within a priority; a lower ``priority`` value is served first
+        (vLLM's ``--scheduling-policy priority``). Interactive requests use 0
+        and background jobs a higher value, so jobs never delay them in the
+        waiting queue. Requests already running are not preempted."""
+        priority = r.request.priority
+        if not self._waiting or self._waiting[-1].request.priority <= priority:
+            self._waiting.append(r)
+            return
+        for index, queued in enumerate(self._waiting):
+            if queued.request.priority > priority:
+                self._waiting.insert(index, r)
+                return
+        self._waiting.append(r)
 
     def _admit(self, r: _SimRequest, now: float) -> bool:
         p, size = self.profile, self._block_size

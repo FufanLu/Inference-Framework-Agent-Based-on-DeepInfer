@@ -950,3 +950,274 @@ async fn detokenize_stats_and_replay_tokens() {
             .is_some_and(|t| !t.is_empty())
     );
 }
+
+// ---------------------------------------------------------------- jobs
+
+async fn send_as(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    key: Option<&str>,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json");
+    if let Some(key) = key {
+        request = request.header("authorization", format!("Bearer {key}"));
+    }
+    let body = body.map_or_else(Body::empty, |body| Body::from(body.to_string()));
+    let response = app
+        .clone()
+        .oneshot(request.body(body).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+/// Poll a job until it finishes.
+async fn wait_job(app: &axum::Router, id: &str, key: Option<&str>) -> Value {
+    for _ in 0..500 {
+        let (status, job) =
+            send_as(app, "GET", &format!("/v1/leviathan/jobs/{id}"), key, None).await;
+        assert_eq!(status, StatusCode::OK, "{job}");
+        if matches!(job["status"].as_str(), Some("succeeded" | "failed")) {
+            return job;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("job {id} did not finish");
+}
+
+fn chat_body(text: &str) -> Value {
+    json!({
+        "model": MODEL,
+        "messages": [{"role": "user", "content": text}],
+        "thinking": {"type": "disabled"},
+        "stream": true,
+    })
+}
+
+#[tokio::test]
+async fn jobs_run_through_the_pipeline_in_every_protocol() {
+    let cluster = cluster(&one_worker(), |_| {}).await;
+    let (status, accepted) = send_as(
+        &cluster.app,
+        "POST",
+        "/v1/leviathan/jobs",
+        None,
+        Some(json!({"jobs": [
+            {"endpoint": "/v1/chat/completions", "body": chat_body("Hi"), "custom_id": "chat"},
+            {"endpoint": "/v1/messages", "custom_id": "messages", "body": {
+                "model": "deepseek-flash", "max_tokens": 64,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "thinking": {"type": "disabled"},
+            }},
+            {"endpoint": "/v1/responses", "custom_id": "responses", "body": {
+                "model": MODEL, "input": "Hi", "reasoning": {"effort": "none"},
+            }},
+        ]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{accepted}");
+    let data = accepted["data"].as_array().unwrap();
+    assert_eq!(data.len(), 3);
+    assert!(data.iter().all(|job| job["status"] == "queued"));
+
+    for job in data {
+        let id = job["id"].as_str().unwrap();
+        let done = wait_job(&cluster.app, id, None).await;
+        assert_eq!(done["status"], "succeeded", "{done}");
+        assert_eq!(done["attempts"], 1);
+        assert_eq!(done["response"]["status_code"], 200);
+        // `stream: true` was ignored: one protocol response, not SSE.
+        let text = done["response"]["body"].to_string();
+        assert!(text.contains("Hello from w0"), "{text}");
+        // It ran through the normal pipeline: the audit log has it.
+        let request_id = done["request_id"].as_str().unwrap();
+        let (status, entry) = get(&cluster.app, &format!("/admin/requests/{request_id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(entry["request"]["outcome"], "ok", "{entry}");
+    }
+    let (_, stats) = get(&cluster.app, "/admin/jobs").await;
+    assert_eq!(stats["jobs"]["succeeded"], 3, "{stats}");
+    assert_eq!(stats["queue"]["backend"], "memory");
+    assert_eq!(stats["runner"]["in_flight"], 0);
+
+    // The runner's limits change at runtime.
+    let (status, stats) = send_as(
+        &cluster.app,
+        "PUT",
+        "/admin/jobs",
+        None,
+        Some(json!({"max_in_flight": 4, "max_queue_delay_ms": 12.5})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["runner"]["max_in_flight"], 4);
+    assert_eq!(stats["runner"]["max_queue_delay_ms"], 12.5);
+}
+
+#[tokio::test]
+async fn jobs_wait_out_an_outage_in_the_queue() {
+    // No worker at all: an interactive request fails, a job waits.
+    let cluster = cluster(&[], |_| {}).await;
+    let (status, job) = send_as(
+        &cluster.app,
+        "POST",
+        "/v1/leviathan/jobs",
+        None,
+        Some(json!({"endpoint": "/v1/chat/completions", "body": chat_body("Hi")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{job}");
+    let id = job["id"].as_str().unwrap().to_string();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (_, waiting) = send_as(
+        &cluster.app,
+        "GET",
+        &format!("/v1/leviathan/jobs/{id}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        waiting["status"], "running",
+        "claimed, waiting for room: {waiting}"
+    );
+    let (_, stats) = get(&cluster.app, "/admin/jobs").await;
+    assert_eq!(stats["runner"]["waiting_for_headroom"], true, "{stats}");
+
+    // A worker comes up: the job runs.
+    let (endpoint, _) = start_worker("late", pb::Role::Unified, Behavior::Serve).await;
+    let (status, _) = post(
+        &cluster.app,
+        "/admin/workers",
+        json!({"endpoint": endpoint}),
+    )
+    .await;
+    assert!(status.is_success());
+    let done = wait_job(&cluster.app, &id, None).await;
+    assert_eq!(done["status"], "succeeded", "{done}");
+    assert!(
+        done["response"]["body"]
+            .to_string()
+            .contains("Hello from late")
+    );
+}
+
+#[tokio::test]
+async fn bad_jobs_are_rejected_or_fail_with_the_protocol_error() {
+    let cluster = cluster(&one_worker(), |_| {}).await;
+    let submit =
+        |body: Value| send_as(&cluster.app, "POST", "/v1/leviathan/jobs", None, Some(body));
+
+    let (status, body) =
+        submit(json!({"endpoint": "/v1/embeddings", "body": chat_body("Hi")})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_endpoint");
+    let (status, body) = submit(json!({"endpoint": "/v1/chat/completions",
+        "body": {"model": "gpt-4", "messages": []}}))
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    let (status, _) = submit(json!({"jobs": []})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Accepted (the model exists) but invalid for the protocol: the job fails
+    // with the protocol's own 400, without retries.
+    let (status, job) = submit(json!({"endpoint": "/v1/chat/completions",
+        "body": {"model": MODEL, "messages": "not a list"}}))
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{job}");
+    let done = wait_job(&cluster.app, job["id"].as_str().unwrap(), None).await;
+    assert_eq!(done["status"], "failed");
+    assert_eq!(done["response"]["status_code"], 400);
+    assert_eq!(done["attempts"], 1);
+    assert!(
+        done["error"].as_str().unwrap().contains("invalid request"),
+        "{done}"
+    );
+}
+
+#[tokio::test]
+async fn jobs_are_private_to_their_tenant() {
+    let cluster = cluster(&one_worker(), |config| {
+        config.auth.api_keys = ["acme", "globex"]
+            .into_iter()
+            .map(|tenant| lev_gateway::config::ApiKeyConfig {
+                key: format!("lev-{tenant}"),
+                tenant: tenant.into(),
+                name: None,
+                limits: Default::default(),
+            })
+            .collect();
+    })
+    .await;
+    let (status, job) = send_as(
+        &cluster.app,
+        "POST",
+        "/v1/leviathan/jobs",
+        Some("lev-acme"),
+        Some(json!({"endpoint": "/v1/chat/completions", "body": chat_body("Hi")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{job}");
+    let id = job["id"].as_str().unwrap();
+    let done = wait_job(&cluster.app, id, Some("lev-acme")).await;
+    assert_eq!(done["status"], "succeeded");
+    let path = format!("/v1/leviathan/jobs/{id}");
+    let (status, _) = send_as(&cluster.app, "GET", &path, Some("lev-globex"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = send_as(&cluster.app, "GET", &path, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // Usage was charged to the submitting tenant.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let (_, usage) = get(&cluster.app, "/admin/usage?tenant=acme").await;
+    assert!(usage.to_string().contains("acme"), "{usage}");
+}
+
+/// The same job path over a real Kafka broker (`LEV_TEST_KAFKA_BROKERS`).
+#[cfg(feature = "kafka")]
+#[tokio::test]
+async fn jobs_run_over_kafka() {
+    let Ok(brokers) = std::env::var("LEV_TEST_KAFKA_BROKERS") else {
+        eprintln!("LEV_TEST_KAFKA_BROKERS not set; skipping");
+        return;
+    };
+    let name = uuid::Uuid::new_v4().simple().to_string();
+    let cluster = cluster(&one_worker(), |config| {
+        config.jobs.queue = "kafka".into();
+        config.jobs.kafka.brokers = brokers;
+        config.jobs.kafka.topic = format!("lev.test.{name}");
+        config.jobs.kafka.group = format!("lev-test-{name}");
+        config.jobs.kafka.partitions = 4;
+    })
+    .await;
+    let jobs: Vec<Value> = (0..40)
+        .map(|i| json!({"endpoint": "/v1/chat/completions", "body": chat_body(&format!("Hi {i}"))}))
+        .collect();
+    let (status, accepted) = send_as(
+        &cluster.app,
+        "POST",
+        "/v1/leviathan/jobs",
+        None,
+        Some(json!({"jobs": jobs})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{accepted}");
+    for job in accepted["data"].as_array().unwrap() {
+        let done = wait_job(&cluster.app, job["id"].as_str().unwrap(), None).await;
+        assert_eq!(done["status"], "succeeded", "{done}");
+    }
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    let (_, stats) = get(&cluster.app, "/admin/jobs").await;
+    assert_eq!(stats["queue"]["backend"], "kafka", "{stats}");
+    assert_eq!(stats["queue"]["backlog"], 0, "{stats}");
+    assert_eq!(stats["jobs"]["succeeded"], 40, "{stats}");
+}

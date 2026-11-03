@@ -25,7 +25,10 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 pub use limiter::{Limiter, LocalLimiter};
-pub use model::{ApiKeyInfo, CreatedKey, DailyUsage, Limits, Tenant, UsageRecord, UsageTotals};
+pub use model::{
+    ApiKeyInfo, CreatedKey, DailyUsage, JobCounts, JobOutcome, JobRecord, JobStatus, Limits,
+    Tenant, UsageRecord, UsageTotals,
+};
 pub use store::{MemoryStore, Store};
 
 const KEY_CACHE_TTL: Duration = Duration::from_secs(30);
@@ -190,6 +193,29 @@ impl ControlPlane {
             });
         }
         Ok(())
+    }
+
+    /// Admit an asynchronous job at submission. Only the monthly quota
+    /// applies: RPM and TPM limit how fast requests hit the engines, and the
+    /// job queue already decides that. Usage is still charged when the job
+    /// runs.
+    pub async fn admit_job(&self, tenant: &Tenant) -> Result<(), Throttle> {
+        if let Some(quota) = tenant.limits.monthly_token_quota {
+            let used = self.month_tokens(&tenant.id).await;
+            if used >= quota {
+                return Err(Throttle::Quota { quota, used });
+            }
+        }
+        Ok(())
+    }
+
+    /// A tenant by ID, including the anonymous tenant: job runners act on
+    /// behalf of the tenant that submitted the job.
+    pub async fn tenant(&self, id: &str) -> anyhow::Result<Option<Tenant>> {
+        if let Some(anonymous) = self.anonymous.as_ref().filter(|t| t.id == id) {
+            return Ok(Some(anonymous.clone()));
+        }
+        self.store.get_tenant(id).await
     }
 
     /// Charge a finished request: TPM bucket, monthly counter, ledger.

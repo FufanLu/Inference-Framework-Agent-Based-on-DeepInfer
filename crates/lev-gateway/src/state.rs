@@ -11,6 +11,7 @@ use metrics_exporter_prometheus::PrometheusHandle;
 use crate::audit::AuditLog;
 use crate::config::Config;
 use crate::events::EventBus;
+use crate::jobs::Jobs;
 use crate::model::ModelRegistry;
 use crate::workers::WorkerPool;
 
@@ -25,6 +26,8 @@ pub struct StateInner {
     pub metrics: Option<PrometheusHandle>,
     /// Tenants, keys, limits and the usage ledger.
     pub control: Arc<ControlPlane>,
+    /// The asynchronous job queue, when enabled.
+    pub jobs: Option<Arc<Jobs>>,
     pub started_at: Instant,
     /// Distinguishes this gateway process in `system_fingerprint`.
     pub fingerprint: String,
@@ -53,8 +56,13 @@ impl AppState {
         for worker in &config.workers {
             pool.add_endpoint(&worker.endpoint)?;
         }
+        let jobs = if config.jobs.enabled {
+            Some(Arc::new(Jobs::connect(&config.jobs).await?))
+        } else {
+            None
+        };
         let fingerprint = format!("fp_lev_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
-        Ok(Self(Arc::new(StateInner {
+        let state = Self(Arc::new(StateInner {
             audit: AuditLog::new(config.audit.capacity),
             config,
             models,
@@ -63,9 +71,14 @@ impl AppState {
             events,
             metrics,
             control,
+            jobs,
             started_at: Instant::now(),
             fingerprint,
-        })))
+        }));
+        if state.jobs.is_some() && state.config.jobs.run {
+            tokio::spawn(crate::jobs::run(state.clone()));
+        }
+        Ok(state)
     }
 }
 

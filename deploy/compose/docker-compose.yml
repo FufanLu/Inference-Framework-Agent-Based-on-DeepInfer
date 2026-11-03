@@ -1,5 +1,6 @@
 # One-command demo: docker compose -f deploy/compose/docker-compose.yml up --build
 #   gateway     http://localhost:8080   (OpenAI / Anthropic compatible API, admin API)
+#   kafka       localhost:9094          (job queue; inside the network kafka:9092)
 #   prometheus  http://localhost:9090
 #   console     http://localhost:3000   (web console)
 #   grafana     http://localhost:3001   (anonymous, dashboard "Leviathan")
@@ -30,6 +31,28 @@ services:
     command: [--backend, sim, --host, 0.0.0.0, --port, "50051", --worker-id, decode-1, --role, decode,
               --profile, h200-vllm, --tokenizer, /opt/leviathan/assets/tokenizers/v41/tokenizer.json]
 
+  kafka:
+    image: apache/kafka:4.1.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9094:9094"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+
   gateway:
     build:
       context: ../..
@@ -40,7 +63,12 @@ services:
       - ./gateway.toml:/etc/leviathan/gateway.toml:ro
     ports:
       - "8080:8080"
-    depends_on: [prefill-0, prefill-1, decode-0, decode-1]
+    depends_on:
+      prefill-0: {condition: service_started}
+      prefill-1: {condition: service_started}
+      decode-0: {condition: service_started}
+      decode-1: {condition: service_started}
+      kafka: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/readyz"]
       interval: 5s

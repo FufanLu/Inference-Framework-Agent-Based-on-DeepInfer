@@ -31,3 +31,24 @@ CREATE TABLE IF NOT EXISTS usage_ledger (
 );
 
 CREATE INDEX IF NOT EXISTS usage_ledger_tenant_time ON usage_ledger (tenant_id, created_at);
+
+-- Asynchronous jobs: status and result. The request body travels in the job
+-- queue (Kafka or in-process), not here.
+CREATE TABLE IF NOT EXISTS jobs (
+    id              UUID PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    custom_id       TEXT,
+    endpoint        TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    request_id      TEXT,
+    response_status INTEGER,
+    response        TEXT,
+    error           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status);
+CREATE INDEX IF NOT EXISTS jobs_tenant_created ON jobs (tenant_id, created_at);

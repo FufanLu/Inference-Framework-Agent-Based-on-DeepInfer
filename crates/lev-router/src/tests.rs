@@ -467,3 +467,30 @@ mod properties {
         }
     }
 }
+
+#[test]
+fn min_queue_delay_follows_the_least_loaded_worker() {
+    let router = router_with(
+        config(Policy::CacheAware),
+        &[
+            ("a", Role::Unified),
+            ("b", Role::Unified),
+            ("d", Role::Decode),
+        ],
+    );
+    assert_eq!(router.min_queue_delay(MODEL), Some(Duration::ZERO));
+    assert_eq!(router.min_queue_delay("other-model"), None);
+
+    // Two in-flight requests on each unified worker: 2 x 2 ms of interference
+    // each, plus the prefill still pending on the second one.
+    let p = prompt(64, 0);
+    let tickets: Vec<_> = (0..4).map(|_| router.route(request(&p)).unwrap()).collect();
+    let delay = router.min_queue_delay(MODEL).unwrap();
+    assert!(delay >= Duration::from_millis(4), "{delay:?}");
+
+    // Decode-only workers never take new requests and do not count.
+    router.set_healthy("a", false);
+    router.set_healthy("b", false);
+    assert_eq!(router.min_queue_delay(MODEL), None);
+    drop(tickets);
+}

@@ -135,3 +135,32 @@ async def test_stop_aborts_in_flight_requests(tokenizer):
     events = await task
     assert events[-1].reason is FinishReason.ABORT and events[-1].error == "worker stopped"
     assert not engine.health().ready
+
+
+async def test_lower_priority_value_is_admitted_first(tokenizer):
+    # One sequence at a time: the waiting queue order is the admission order.
+    engine = await start_engine(tokenizer, max_num_seqs=1)
+    order: list[str] = []
+
+    async def track(request: GenerateRequest) -> None:
+        async for event in engine.generate(request):
+            if isinstance(event, Ready):
+                order.append(request.request_id)
+
+    def request(name: str, priority: int) -> GenerateRequest:
+        return GenerateRequest(
+            request_id=name,
+            prompt_token_ids=tuple(prompt_ids(tokenizer, f"question {name}")),
+            sampling=SamplingParams(seed=1, max_tokens=8),
+            priority=priority,
+        )
+
+    tasks = [asyncio.create_task(track(request("blocker", 0)))]
+    await asyncio.sleep(0)
+    for name in ("job-1", "job-2", "job-3"):
+        tasks.append(asyncio.create_task(track(request(name, 1))))
+        await asyncio.sleep(0)
+    tasks.append(asyncio.create_task(track(request("interactive", 0))))
+    await asyncio.wait_for(asyncio.gather(*tasks), TIMEOUT)
+    assert order == ["blocker", "interactive", "job-1", "job-2", "job-3"]
+    await engine.stop()
