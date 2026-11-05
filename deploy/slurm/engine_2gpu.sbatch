@@ -38,6 +38,9 @@ step() {
 }
 TR="torchrun --standalone --nproc-per-node 2"
 
+# The gateway/lev-bench for step 4 (incremental; the V2 chat template is new).
+step build 1500 cargo build --release --no-default-features -p lev-gateway -p lev-bench
+
 # 1. Collectives: defaults (with NCCL's own view of the topology), then one knob at a time.
 step nccl-default 600 env NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,GRAPH,TUNING $TR bench/nccl/collectives.py --out "$OUT/nccl-default.json"
 for proto in LL LL128 Simple; do
@@ -57,7 +60,7 @@ step parallel-ep 1500 $TR bench/engine/parallel.py --mode ep --model "$MODEL" --
 step afd 1500 $TR bench/engine/afd.py --model "$MODEL" --out "$OUT/afd.json"
 
 # 4. Serving: gateway (V2 template, cache_aware) + one lev worker per GPU,
-#    routing policies compared with lev-bench (needs deploy/slurm/build.sbatch).
+#    routing policies compared with lev-bench (binaries from the build step).
 cat > "$OUT/gateway.toml" <<TOML
 listen = "127.0.0.1:8080"
 [[models]]
