@@ -105,6 +105,21 @@ def mla_attention(q_latent, q_rope, cache, batch, scale) -> torch.Tensor:
     return out
 
 
+def gqa_attention(q, cache, batch, scale, num_kv_heads) -> torch.Tensor:
+    T, Hq, D = q.shape
+    G = Hq // num_kv_heads
+    assert q.stride(-1) == 1 and cache.is_contiguous()
+    out = torch.empty_like(q)
+    if T:
+        kernels.gqa_attention_kernel[(T, num_kv_heads)](
+            q, cache, out, batch.block_tables, batch.token_seq, batch.positions,
+            G, D, num_kv_heads, cache.shape[1], scale,
+            q.stride(0), q.stride(1), cache.stride(1), batch.block_tables.stride(0), out.stride(0), out.stride(1),
+            BLOCK_G=_pow2(G), BLOCK_D=_pow2(D), BLOCK_N=ATTN_BLOCK_N,
+        )  # fmt: skip
+    return out
+
+
 def align_by_expert(topk_ids: torch.Tensor, num_experts: int, block_m: int):
     """Rows (positions in the flattened [T*k] list) grouped by expert, each
     group padded to a multiple of `block_m` with -1, and the expert of every
@@ -161,5 +176,6 @@ def triton_ops(batch_invariant: bool) -> Ops:
         silu_and_mul=silu_and_mul,
         write_kv=reference.write_kv,
         mla_attention=mla_attention,
+        gqa_attention=gqa_attention,
         moe_routed=moe_routed,
     )

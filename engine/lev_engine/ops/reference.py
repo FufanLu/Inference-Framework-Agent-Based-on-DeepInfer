@@ -84,6 +84,36 @@ def mla_attention(
     return out
 
 
+def gqa_attention(
+    q: torch.Tensor,  # [T, Hq, d]   rotated
+    cache: torch.Tensor,  # [num_blocks, block_size, 2 * Hkv * d]: K heads then V heads
+    batch: ForwardBatch,
+    scale: float,
+    num_kv_heads: int,
+) -> torch.Tensor:
+    """Causal grouped-query attention over a paged K/V cache; returns [T, Hq, d]."""
+    T, Hq, d = q.shape
+    group = Hq // num_kv_heads
+    block_size = cache.shape[1]
+    out = torch.empty_like(q)
+    start = 0
+    for seq, (q_len, ctx_len) in enumerate(zip(batch.query_lens_cpu, batch.seq_lens_cpu, strict=True)):
+        if q_len == 0:
+            continue
+        blocks = batch.block_tables[seq, : (ctx_len + block_size - 1) // block_size].long()
+        kv = acc(cache[blocks].reshape(-1, 2, num_kv_heads, d)[:ctx_len])  # [L, 2, Hkv, d]
+        k = kv[:, 0].repeat_interleave(group, dim=1)  # [L, Hq, d]
+        v = kv[:, 1].repeat_interleave(group, dim=1)
+        qs = acc(q[start : start + q_len])
+        scores = torch.einsum("qhd,lhd->hql", qs, k) * scale
+        q_pos = torch.arange(ctx_len - q_len, ctx_len, device=scores.device)
+        k_pos = torch.arange(ctx_len, device=scores.device)
+        scores = scores.masked_fill(k_pos[None, :] > q_pos[:, None], float("-inf"))
+        out[start : start + q_len] = torch.einsum("hql,lhd->qhd", scores.softmax(-1), v).to(out.dtype)
+        start += q_len
+    return out
+
+
 def moe_routed(
     x: torch.Tensor,  # [T, hidden]
     topk_ids: torch.Tensor,  # [T, k]

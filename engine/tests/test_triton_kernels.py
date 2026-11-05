@@ -109,6 +109,17 @@ def test_mla_attention_matches_reference_and_is_batch_invariant():
     assert torch.equal(solo[0], got[13])
 
 
+def test_gqa_attention_matches_reference_and_is_batch_invariant():
+    Hq, Hkv, D, BS = 8, 2, 16, 4
+    cache = rand(64, BS, 2 * Hkv * D)
+    batch = paged_batch([[1] * 11, [2], [3] * 6], [0, 50, 13], BS, 64)
+    q = rand(batch.num_tokens, Hq, D)
+    got = tops.gqa_attention(q, cache, batch, 0.25, Hkv)
+    torch.testing.assert_close(got, reference.gqa_attention(q, cache, batch, 0.25, Hkv), rtol=1e-4, atol=1e-5)
+    alone = ForwardBatch.build([[2]], [50], [batch.block_tables[1].tolist()], BS, [True], DEVICE)
+    assert torch.equal(tops.gqa_attention(q[11:12], cache, alone, 0.25, Hkv)[0], got[11])
+
+
 def test_moe_matches_reference():
     T, k, E, hidden, inter = 23, 3, 8, 64, 24
     x = rand(T, hidden)

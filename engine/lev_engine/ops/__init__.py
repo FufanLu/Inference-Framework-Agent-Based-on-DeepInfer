@@ -22,6 +22,7 @@ class Ops:
     silu_and_mul: Callable
     write_kv: Callable
     mla_attention: Callable
+    gqa_attention: Callable
     moe_routed: Callable
 
 
@@ -33,6 +34,7 @@ REFERENCE = Ops(
     silu_and_mul=reference.silu_and_mul,
     write_kv=reference.write_kv,
     mla_attention=reference.mla_attention,
+    gqa_attention=reference.gqa_attention,
     moe_routed=reference.moe_routed,
 )
 

@@ -164,3 +164,49 @@ def moe_gemm_kernel(
         acc = acc * tl.sigmoid(acc) * acc_up
     tl.store(out_ptr + dst[:, None].to(tl.int64) * stride_om + rn[None, :],
              acc.to(out_ptr.dtype.element_ty), mask=live[:, None] & (rn[None, :] < N))  # fmt: skip
+
+
+@triton.jit
+def gqa_attention_kernel(
+    q_ptr, cache_ptr, out_ptr, block_tables_ptr, token_seq_ptr, positions_ptr,
+    G, D, HKV, BS, scale,
+    stride_q_t, stride_q_h, stride_cache_slot, stride_bt, stride_o_t, stride_o_h,
+    BLOCK_G: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_N: tl.constexpr,
+):  # fmt: skip
+    """Program (t, kv_head): the G query heads sharing one KV head, for one
+    token. Cache rows are [K head 0..HKV-1 | V head 0..HKV-1], D values each.
+    Same fixed-chunk reduction as the MLA kernel, hence batch-invariant."""
+    t = tl.program_id(0)
+    kvh = tl.program_id(1)
+    seq = tl.load(token_seq_ptr + t)
+    ctx = tl.load(positions_ptr + t) + 1
+    g = tl.arange(0, BLOCK_G)
+    d = tl.arange(0, BLOCK_D)
+    gm = g < G
+    heads = kvh * G + g
+    q = tl.load(q_ptr + t * stride_q_t + heads[:, None] * stride_q_h + d[None, :],
+                mask=gm[:, None] & (d[None, :] < D), other=0.0)  # fmt: skip
+    m_i = tl.full((BLOCK_G,), float("-inf"), dtype=tl.float32)
+    l_i = tl.zeros((BLOCK_G,), dtype=tl.float32)
+    acc = tl.zeros((BLOCK_G, BLOCK_D), dtype=tl.float32)
+    k_off = kvh * D
+    v_off = (HKV + kvh) * D
+    for start in range(0, ctx, BLOCK_N):
+        n = start + tl.arange(0, BLOCK_N)
+        valid = n < ctx
+        block = tl.load(block_tables_ptr + seq * stride_bt + n // BS, mask=valid, other=0)
+        slot = block.to(tl.int64) * BS + n % BS
+        kv_mask = valid[:, None] & (d[None, :] < D)
+        k = tl.load(cache_ptr + slot[:, None] * stride_cache_slot + k_off + d[None, :], mask=kv_mask, other=0.0)
+        v = tl.load(cache_ptr + slot[:, None] * stride_cache_slot + v_off + d[None, :], mask=kv_mask, other=0.0)
+        s = tl.dot(q, tl.trans(k))
+        s = tl.where(valid[None, :], s * scale, float("-inf"))
+        m_new = tl.maximum(m_i, tl.max(s, axis=1))
+        alpha = tl.exp(m_i - m_new)
+        p = tl.exp(s - m_new[:, None])
+        l_i = l_i * alpha + tl.sum(p, axis=1)
+        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
+        m_i = m_new
+    out = acc / l_i[:, None]
+    tl.store(out_ptr + t * stride_o_t + heads[:, None] * stride_o_h + d[None, :],
+             out.to(out_ptr.dtype.element_ty), mask=gm[:, None] & (d[None, :] < D))  # fmt: skip

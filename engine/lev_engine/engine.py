@@ -12,7 +12,7 @@ import torch
 from .batch import ForwardBatch
 from .config import EngineConfig, ModelSpec
 from .kv_cache import BlockPool, BlockRemoved, BlockStored
-from .models.deepseek_v2 import DeepseekV2
+from .models import model_class
 from .ops import get_ops
 from .sampler import sample
 from .scheduler import Scheduler
@@ -59,7 +59,7 @@ class LLMEngine:
         self.device = torch.device(config.device)
         dtype = DTYPES[config.dtype]
         weights = load_state_dict(model_path, dtype, self.device)
-        self.model = DeepseekV2(self.spec, weights, get_ops(config.kernel_backend, config.batch_invariant), config.max_model_len, self.device)
+        self.model = model_class(self.spec)(self.spec, weights, get_ops(config.kernel_backend, config.batch_invariant), config.max_model_len, self.device)
         num_blocks = config.num_blocks or self._blocks_for_memory(dtype)
         self.pool = BlockPool(num_blocks, config.block_size, config.enable_prefix_caching)
         shape = self.model.kv_cache_shape(num_blocks, config.block_size)

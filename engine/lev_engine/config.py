@@ -38,6 +38,13 @@ class ModelSpec:
     rope: RopeSpec
     bos_token_id: int | None = None
     eos_token_id: int | None = None
+    tie_word_embeddings: bool = False
+    # GQA (Qwen3): cache holds K and V of every KV head.
+    num_kv_heads: int = 0
+    head_dim: int = 0
+    qk_norm: bool = False
+    #: RoPE pairs: interleaved (x[2i], x[2i+1]) for DeepSeek, halves for Qwen.
+    rope_interleaved: bool = True
     # MLA
     q_lora_rank: int | None = None
     kv_lora_rank: int = 0
@@ -62,9 +69,16 @@ class ModelSpec:
         return self.qk_nope_head_dim + self.qk_rope_head_dim
 
     @property
+    def is_mla(self) -> bool:
+        return self.kv_lora_rank > 0
+
+    @property
     def kv_cache_dim(self) -> int:
-        """Values cached per token per layer: the MLA latent plus the shared RoPE key."""
-        return self.kv_lora_rank + self.qk_rope_head_dim
+        """Values cached per token per layer: the MLA latent plus the shared
+        RoPE key, or K and V of every KV head (GQA)."""
+        if self.is_mla:
+            return self.kv_lora_rank + self.qk_rope_head_dim
+        return 2 * self.num_kv_heads * self.head_dim
 
     def is_moe_layer(self, layer: int) -> bool:
         return (
@@ -76,6 +90,8 @@ class ModelSpec:
     @classmethod
     def from_hf_config(cls, config: dict[str, Any]) -> ModelSpec:
         arch = (config.get("architectures") or [config.get("model_type", "")])[0]
+        if arch == "Qwen3ForCausalLM":
+            return cls._qwen3(config)
         if arch not in ("DeepseekV2ForCausalLM", "DeepseekV3ForCausalLM"):
             raise ValueError(f"unsupported architecture {arch!r}")
         if arch == "DeepseekV3ForCausalLM" or config.get("scoring_func", "softmax") != "softmax":
@@ -123,6 +139,31 @@ class ModelSpec:
             topk_group=config.get("topk_group") or 1,
             norm_topk_prob=bool(config.get("norm_topk_prob", False)),
             routed_scaling_factor=float(config.get("routed_scaling_factor", 1.0)),
+        )
+
+    @classmethod
+    def _qwen3(cls, config: dict[str, Any]) -> ModelSpec:
+        if config.get("rope_scaling") or config.get("use_sliding_window"):
+            raise ValueError("Qwen3 with rope scaling or sliding windows is not implemented")
+        heads = config["num_attention_heads"]
+        eos = config.get("eos_token_id")
+        return cls(
+            architecture="Qwen3ForCausalLM",
+            vocab_size=config["vocab_size"],
+            hidden_size=config["hidden_size"],
+            num_layers=config["num_hidden_layers"],
+            num_heads=heads,
+            intermediate_size=config["intermediate_size"],
+            rms_norm_eps=config.get("rms_norm_eps", 1e-6),
+            max_position=config.get("max_position_embeddings", 4096),
+            rope=RopeSpec(theta=float(config.get("rope_theta") or (config.get("rope_parameters") or {}).get("rope_theta", 1e6))),
+            bos_token_id=config.get("bos_token_id"),
+            eos_token_id=eos[0] if isinstance(eos, list) else eos,
+            tie_word_embeddings=bool(config.get("tie_word_embeddings", False)),
+            num_kv_heads=config["num_key_value_heads"],
+            head_dim=config.get("head_dim") or config["hidden_size"] // heads,
+            qk_norm=True,
+            rope_interleaved=False,
         )
 
     @classmethod

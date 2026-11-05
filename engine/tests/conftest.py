@@ -65,3 +65,32 @@ def tiny_v2_qlora(tmp_path_factory):
     return tiny_checkpoint(
         tmp_path_factory, "tiny-v2-qlora", q_lora_rank=24, topk_method="group_limited_greedy", n_group=4, topk_group=2
     )
+
+
+QWEN3_TINY = dict(
+    vocab_size=320,
+    hidden_size=64,
+    intermediate_size=96,
+    num_hidden_layers=3,
+    num_attention_heads=4,
+    num_key_value_heads=2,
+    head_dim=16,
+    max_position_embeddings=512,
+    rope_theta=1000000.0,
+    tie_word_embeddings=True,
+    bos_token_id=0,
+    eos_token_id=1,
+)
+
+
+@pytest.fixture(scope="session")
+def tiny_qwen3(tmp_path_factory):
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+
+    torch.manual_seed(0)
+    config = Qwen3Config(**QWEN3_TINY)
+    config._attn_implementation = "eager"
+    model = Qwen3ForCausalLM(config).double().eval()
+    path = tmp_path_factory.mktemp("tiny-qwen3")
+    model.save_pretrained(path)
+    return path, model
