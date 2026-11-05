@@ -55,7 +55,7 @@ flowchart TB
 - **统一的块哈希约定**（见 `proto/leviathan/worker/v1/worker.proto` 文件头）：Rust 路由器和 Python worker 用同一个 xxh3 链式哈希，跨语言测试向量保证两边一致。vLLM 带盐的块哈希在 worker 内翻译成这套约定。
 - **cache-aware 路由就是最小化预计 TTFT**：缓存命中和负载都换算成“预计首 token 时间”，取舍有物理单位，不靠调权重。
 - **突发流量在 Kafka 里排队，而不是堆在引擎里。** 批量任务走 `POST /v1/leviathan/jobs`；Kafka 消费者组里的执行器只在路由器估计的排队时延低于上限时才启动作业，交互请求的延迟因此不受影响，某个网关挂掉后它的作业会转给其他网关。
-- **自研推理引擎**（`engine/`，`--backend lev`）：支持 DeepSeek-V2（MLA + MoE）和 Qwen3。分页 KV cache 的块哈希与路由器一致；连续批处理带分块 prefill、优先级和重算式抢占；Triton 算子和基于计数器哈希的采样都是 batch-invariant 的，请求的输出不随同批的其他请求变化。通过 NCCL 支持张量并行和专家并行。数值在 float64 下与 transformers 对齐。
+- **自研推理引擎**（`engine/`，`--backend lev`）：支持 DeepSeek-V2（MLA + MoE）和 Qwen3。分页 KV cache 的块哈希与路由器一致；连续批处理带分块 prefill、优先级和重算式抢占；Triton 算子和基于计数器哈希的采样都是 batch-invariant 的，请求的输出不随同批的其他请求变化。投机解码（n-gram 查找，或用与目标模型相同噪声采样的 draft 模型）的输出与逐个解码完全一致。通过 NCCL 支持张量并行和专家并行。数值在 float64 下与 transformers 对齐。
 - **在它之上的 RL 闭环**（`rl/`）：GRPO，rollout 用 lev-engine，权重同步回引擎，每一步都测量训练与推理之间的 logprob 差异。
 - **确定性重放**：每个请求的 token ID、采样参数和 seed 都进审计日志，可以原样重跑，并逐 token 对比两次输出。
 
@@ -163,6 +163,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
 8. [可观测性与重放](docs/illustrated/08-observability-and-replay.md)
 9. [突发流量、Kafka 与准入控制](docs/illustrated/09-bursts-and-kafka.md)：突发实验、Pareto 曲线、杀掉一个网关后的故障转移
 10. [Leviathan 自研引擎](docs/illustrated/10-lev-engine.md)：MLA 潜在向量 cache、逐步追踪分块 prefill 与抢占、batch invariance
+11. [投机解码](docs/illustrated/11-speculative-decoding.md)：draft 只决定一步确认几个 token，不决定是哪些；共享噪声的 draft 采样；顺带发现的一个前缀缓存 bug
 
 ## 路线图
 
@@ -184,6 +185,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
   - [x] DeepSeek-V2（吸收式 MLA、DeepSeekMoE）与 Qwen3；分页 cache、使用路由器哈希的前缀缓存、分块 prefill、优先级、抢占；worker 后端；网关支持 DeepSeek-V2 对话模板
   - [x] batch-invariant Triton 算子（GEMM、MLA 与 GQA 注意力、分组 MoE、RMSNorm）与带 seed 的 Gumbel-max 采样
   - [x] 张量并行与专家并行（TP2 / EP2 + DP 注意力），已与单进程结果对齐
+  - [x] 投机解码：n-gram 与 draft 模型两种 proposer，验证规则保证输出与逐个解码一致（invariant 算子下逐位一致），verify 步的 CUDA Graph；H200 作业已写好（`spec_h200.sbatch`），尚未排队
   - [ ] H200 实测：与 transformers 数值对齐、invariance、算子、对比 vLLM 的吞吐、TP2 / EP2、NCCL 调优（作业已写好、排队中）
   - [ ] CUDA Graph 与重叠调度
 - [ ] P8 RL：GRPO 闭环（含权重同步与训推差异指标，已在 CPU 上测试），H200 运行待做

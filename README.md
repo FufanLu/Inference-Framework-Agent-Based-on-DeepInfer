@@ -55,7 +55,7 @@ Design points:
 - **One block-hash convention** (header of `proto/leviathan/worker/v1/worker.proto`): a chained xxh3 hash shared by the Rust router and the Python workers, pinned by a cross-language test vector. vLLM's salted block hashes are translated into it inside the worker.
 - **Cache-aware routing is TTFT minimization**: cache hits and load are both converted into estimated time to first token, so the trade-off has a physical unit instead of a tuning weight.
 - **Bursts wait in Kafka, not in the engines.** Batch work goes to `POST /v1/leviathan/jobs`; runners in a Kafka consumer group start a job only while the router's estimated queueing delay stays under a bound, so interactive requests keep their latency and a dead gateway's jobs move to another.
-- **An engine of its own** (`engine/`, `--backend lev`): DeepSeek-V2 (MLA + MoE) and Qwen3 on a paged cache whose block hashes are the router's, continuous batching with chunked prefill, priorities and recompute preemption, and batch-invariant Triton kernels plus counter-based sampling, so a request's tokens do not depend on its batch. Tensor and expert parallelism over NCCL. Checked against transformers in float64.
+- **An engine of its own** (`engine/`, `--backend lev`): DeepSeek-V2 (MLA + MoE) and Qwen3 on a paged cache whose block hashes are the router's, continuous batching with chunked prefill, priorities and recompute preemption, and batch-invariant Triton kernels plus counter-based sampling, so a request's tokens do not depend on its batch. Speculative decoding (n-gram lookup, or a draft model sampling with the target's noise) whose output is exactly plain decoding's. Tensor and expert parallelism over NCCL. Checked against transformers in float64.
 - **An RL loop on top** (`rl/`): GRPO with lev-engine rollouts, weight sync into the engine, and the training-inference logprob mismatch measured every step.
 - **Deterministic replay**: every request's token IDs, sampling parameters and seed are in the audit log, so a request can be re-run and diffed token by token.
 
@@ -163,6 +163,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 8. [Observability and replay](docs/illustrated/08-observability-and-replay.md)
 9. [Bursts, Kafka and admission control](docs/illustrated/09-bursts-and-kafka.md): the burst experiment, the Pareto curve, failover with a killed gateway
 10. [Leviathan's own engine](docs/illustrated/10-lev-engine.md): the MLA latent cache, chunked prefill and preemption traced step by step, batch invariance
+11. [Speculative decoding](docs/illustrated/11-speculative-decoding.md): drafts decide how many tokens a step confirms, never which; shared-noise drafting; a prefix-cache bug it exposed
 
 ## Roadmap
 
@@ -184,6 +185,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] DeepSeek-V2 (absorbed MLA, DeepSeekMoE) and Qwen3; paged cache, prefix cache in the router's hashes, chunked prefill, priorities, preemption; worker backend; DeepSeek-V2 chat template in the gateway
   - [x] batch-invariant Triton kernels (GEMM, MLA and GQA attention, grouped MoE, RMSNorm) and seeded Gumbel-max sampling
   - [x] tensor and expert parallelism (TP2 / EP2 with DP attention), checked against one process
+  - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 run written (`spec_h200.sbatch`), not yet queued
   - [ ] H200 measurements: parity with transformers, invariance, kernels, throughput vs vLLM, TP2 / EP2, NCCL tuning (jobs written, queued)
   - [ ] CUDA graphs and overlapped scheduling
 - [ ] P8 RL: GRPO loop with weight sync and mismatch metrics (CPU-tested), H200 run pending

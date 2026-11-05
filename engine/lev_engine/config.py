@@ -196,6 +196,18 @@ class EngineConfig:
     #: Replay decode steps from CUDA graphs (Triton backend on CUDA only).
     cuda_graph: bool = False
     cuda_graph_max_batch: int = 256
+    #: Speculative decoding: None, "ngram" (prompt lookup) or "draft" (the
+    #: small model at `draft_model`, same tokenizer). Exact: the tokens are
+    #: those of decoding one at a time (see `lev_engine.speculative`).
+    speculative: str | None = None
+    #: Draft tokens verified per decode step (k; the step has k+1 tokens).
+    num_speculative_tokens: int = 4
+    #: Prompt lookup: longest and shortest suffix n-gram to search for.
+    ngram_max: int = 4
+    ngram_min: int = 2
+    draft_model: str = ""
+    #: The draft samples with the target's noise (True) or greedily.
+    draft_coupled: bool = True
     device: str = "cpu"
     dtype: str = "float32"
     extra: dict[str, Any] = field(default_factory=dict)

@@ -58,6 +58,8 @@ class Sequence:
     #: Chain hashes of the full blocks of `tokens`, computed lazily.
     _hashes: list[int] = field(default_factory=list)
     num_preemptions: int = 0
+    #: Tokens whose KV is in the draft model's cache (speculative "draft").
+    num_draft_computed: int = 0
 
     @property
     def tokens(self) -> list[int]:

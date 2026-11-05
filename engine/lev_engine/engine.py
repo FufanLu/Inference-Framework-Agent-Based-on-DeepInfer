@@ -17,6 +17,7 @@ from .ops import get_ops
 from .sampler import sample_tensors
 from .scheduler import Scheduler
 from .sequence import FinishReason, SamplingParams, Sequence, Status
+from .speculative import DraftProposer, make_proposer, verify
 from .weights import load_state_dict
 
 DTYPES = {"float32": torch.float32, "float64": torch.float64, "bfloat16": torch.bfloat16, "float16": torch.float16}
@@ -38,9 +39,18 @@ class _Inflight:
     """A launched step whose samples have not been read back yet."""
 
     seqs: list[Sequence]
-    tokens: torch.Tensor  # [S] on the device
+    tokens: torch.Tensor  # [R] on the device: one row per sample
     logprobs: torch.Tensor | None
     positions: list[int] = field(default_factory=list)  # index of each placeholder in seq.output
+    #: Per sequence: its first row in `tokens`, and the drafts its rows verify
+    #: (row r+i is the target's sample after draft i; plain decode: none).
+    rows: list[int] = field(default_factory=list)
+    drafts: list[list[int]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.rows:
+            self.rows = list(range(len(self.seqs)))
+            self.drafts = [[] for _ in self.seqs]
 
     def place_holders(self) -> None:
         """Append placeholder -(i+1) for sample i: the token is unknown until
@@ -57,6 +67,7 @@ class StepStats:
     num_seqs: int = 0
     num_tokens: int = 0
     num_preempted: int = 0
+    num_drafts: int = 0
     schedule_s: float = 0.0
     forward_s: float = 0.0
 
@@ -68,6 +79,11 @@ class EngineStats:
     cached_prompt_tokens: int = 0
     generated_tokens: int = 0
     preemptions: int = 0
+    #: Speculative decoding: decode rows that verified drafts, draft tokens
+    #: verified, and how many of them the target accepted.
+    verify_rows: int = 0
+    draft_tokens: int = 0
+    accepted_tokens: int = 0
     last: StepStats = field(default_factory=StepStats)
 
 
@@ -77,6 +93,8 @@ class LLMEngine:
         self.spec = ModelSpec.from_pretrained(model_path)
         self.device = torch.device(config.device)
         dtype = DTYPES[config.dtype]
+        if config.speculative and config.overlap_schedule:
+            raise ValueError("speculative decoding needs overlap_schedule=False: the next step depends on the accepted drafts")
         weights = load_state_dict(model_path, dtype, self.device)
         self.model = model_class(self.spec)(self.spec, weights, get_ops(config.kernel_backend, config.batch_invariant), config.max_model_len, self.device)
         num_blocks = config.num_blocks or self._blocks_for_memory(dtype)
@@ -87,14 +105,23 @@ class LLMEngine:
         self.pool = BlockPool(num_blocks - int(graphs), config.block_size, config.enable_prefix_caching)
         shape = self.model.kv_cache_shape(num_blocks, config.block_size)
         self.kv_caches = [torch.zeros(shape, dtype=dtype, device=self.device) for _ in range(self.spec.num_layers)]
-        self.graphs = None
+        self.proposer = make_proposer(config, num_blocks, self.device, dtype) if config.speculative else None
+        self.graphs = self.verify_graphs = None
         if graphs:
             from .cuda_graph import DecodeGraphs
 
             max_blocks = (config.max_model_len + config.block_size - 1) // config.block_size
-            self.graphs = DecodeGraphs(
-                self.model, self.kv_caches, config.block_size, max_blocks, num_blocks - 1, config.cuda_graph_max_batch
-            )
+
+            def capture(model, caches, query_len=1):
+                return DecodeGraphs(model, caches, config.block_size, max_blocks, num_blocks - 1,
+                                    config.cuda_graph_max_batch, query_len)  # fmt: skip
+
+            self.graphs = capture(self.model, self.kv_caches)
+            if self.proposer is not None:
+                # Verify steps with k drafts per row (drafts are padded to k).
+                self.verify_graphs = capture(self.model, self.kv_caches, config.num_speculative_tokens + 1)
+            if isinstance(self.proposer, DraftProposer):
+                self.proposer.graphs = capture(self.proposer.model, self.proposer.kv_caches)
         self.scheduler = Scheduler(config, self.pool)
         self.requests: dict[str, Sequence] = {}
         self.stats = EngineStats()
@@ -103,8 +130,10 @@ class LLMEngine:
     def _blocks_for_memory(self, dtype: torch.dtype) -> int:
         if not self.config.kv_cache_memory_bytes:
             raise ValueError("set EngineConfig.num_blocks or kv_cache_memory_bytes")
-        per_block = self.spec.num_layers * self.config.block_size * self.spec.kv_cache_dim * dtype.itemsize
-        return self.config.kv_cache_memory_bytes // per_block
+        per_token = self.spec.num_layers * self.spec.kv_cache_dim * dtype.itemsize
+        if self.config.speculative == "draft" and self.config.draft_model:
+            per_token += DraftProposer.cache_bytes_per_token(self.config.draft_model, dtype)  # same block ids
+        return self.config.kv_cache_memory_bytes // (per_token * self.config.block_size)
 
     # ------------------------------------------------------------------ requests
 
@@ -182,12 +211,15 @@ class LLMEngine:
                     f"{self.pool.num_blocks} blocks of {self.config.block_size}"
                 )
             return []
+        if self.proposer is not None:
+            self._draft(plan.scheduled)
         batch = ForwardBatch.build(
-            [s.seq.tokens[s.start : s.start + s.num_new] for s in plan.scheduled],
+            [s.seq.tokens[s.start : s.start + s.num_new] + s.draft for s in plan.scheduled],
             [s.start for s in plan.scheduled],
             [s.seq.block_ids for s in plan.scheduled],
             self.config.block_size,
-            [s.completes_prompt for s in plan.scheduled],
+            # Logits after the last token, and after every draft token.
+            [1 + len(s.draft) if s.completes_prompt else 0 for s in plan.scheduled],
             self.device,
         )
         if self._inflight is not None:
@@ -198,15 +230,26 @@ class LLMEngine:
         t1 = time.perf_counter()
         if self.graphs is not None and self.graphs.can_run(batch):
             logits = self.graphs.run(batch)
+        elif self.verify_graphs is not None and self.verify_graphs.can_run(batch):
+            logits = self.verify_graphs.run(batch)
         else:
             logits = self.model.forward(batch, self.kv_caches)
-        samplers = [s.seq for s in plan.scheduled if s.completes_prompt]
+        samplers = [s for s in plan.scheduled if s.completes_prompt]
         launched = None
         if samplers:
-            tokens, logprobs = sample_tensors(logits, [q.params for q in samplers], [len(q.output) for q in samplers])
-            launched = _Inflight(samplers, tokens, logprobs)
+            # Row i of a verify samples output index len(output) + i, with the
+            # same noise plain decoding uses for that index.
+            rows, params, steps = [], [], []
+            for s in samplers:
+                rows.append(len(params))
+                params += [s.seq.params] * (1 + len(s.draft))
+                steps += range(len(s.seq.output), len(s.seq.output) + 1 + len(s.draft))
+            tokens, logprobs = sample_tensors(logits, params, steps)
+            launched = _Inflight([s.seq for s in samplers], tokens, logprobs,
+                                 rows=rows, drafts=[s.draft for s in samplers])  # fmt: skip
         stats.num_seqs = len(plan.scheduled)
         stats.num_tokens = plan.num_tokens
+        stats.num_drafts = sum(len(s.draft) for s in plan.scheduled)
         self.stats.steps += 1
         self.stats.last = stats
 
@@ -230,31 +273,67 @@ class LLMEngine:
         stats.schedule_s, stats.forward_s = t1 - t0, time.perf_counter() - t1
         return outputs
 
+    def _draft(self, scheduled) -> None:
+        """Fill the drafts of the decodes with lookahead slots; keep the
+        draft model's cache in step with everything else the target computes."""
+        rows = [s for s in scheduled if s.lookahead]
+        if rows:
+            for s, draft in zip(rows, self.proposer.propose(rows), strict=True):
+                if self.verify_graphs is not None and len(draft) < s.lookahead:
+                    # Uniform k+1 rows replay a graph; a filler token that
+                    # happens to match is a correct accept like any other.
+                    draft = draft + [draft[-1] if draft else s.seq.tokens[-1]] * (s.lookahead - len(draft))
+                s.draft = draft
+        self.proposer.follow([s for s in scheduled if not s.lookahead])
+
     def _resolve(self, inflight: "_Inflight") -> list[StepOutput]:
         """Read a step's samples back (this is the synchronisation point),
-        put them in place of the placeholders, apply stop conditions."""
+        verify drafts, put the tokens in place of the placeholders, apply
+        stop conditions."""
         tokens = inflight.tokens.tolist()
         logprobs = inflight.logprobs.tolist() if inflight.logprobs is not None else None
         outputs: list[StepOutput] = []
         for i, seq in enumerate(inflight.seqs):
             if seq.status is Status.FINISHED:
                 continue  # stopped one step earlier (overlap) or aborted
-            pos = inflight.positions[i]
-            token = tokens[i]
-            seq.output[pos] = token
-            lp = None
-            if logprobs is not None and seq.params.logprobs:
-                seq.logprobs[pos] = logprobs[i]
-                lp = [logprobs[i]]
-            self.stats.generated_tokens += 1
+            pos, row, draft = inflight.positions[i], inflight.rows[i], inflight.drafts[i]
+            new = verify(tokens[row : row + 1 + len(draft)], draft)
+            if draft:
+                accepted = len(new) - 1
+                self.stats.verify_rows += 1
+                self.stats.draft_tokens += len(draft)
+                self.stats.accepted_tokens += accepted
+                # The accepted drafts were the inputs at the next positions,
+                # so their KV is the real one; the rest is overwritten later.
+                seq.num_computed += accepted
+                seq.num_draft_computed = min(seq.num_draft_computed, seq.num_computed)
             if pos == 0:
                 self.stats.prompt_tokens += len(seq.prompt)
                 self.stats.cached_prompt_tokens += seq.num_cached_prompt or 0
-            # Stop conditions see only the resolved tokens.
-            reason = self._stop_at(seq, token, pos + 1)
+            wants_lp = logprobs is not None and seq.params.logprobs
+            lps: list[float] = []
+            reason = None
+            for k, token in enumerate(new):
+                at = pos + k
+                value = logprobs[row + k] if wants_lp else 0.0
+                if k == 0:  # the placeholder
+                    seq.output[at] = token
+                    if wants_lp:
+                        seq.logprobs[at] = value
+                else:  # verified drafts (never overlapped: nothing follows)
+                    seq.output.append(token)
+                    if wants_lp:
+                        seq.logprobs.append(value)
+                lps.append(value)
+                # Stop conditions see only the resolved tokens.
+                reason = self._stop_at(seq, token, at + 1)
+                if reason is not None:
+                    break
+            emitted = new[: k + 1]
+            self.stats.generated_tokens += len(emitted)
             if reason is not None:
-                del seq.output[pos + 1 :]  # an overlapped extra step's placeholder
-                del seq.logprobs[pos + 1 :]
+                del seq.output[at + 1 :]  # an overlapped extra step's placeholder
+                del seq.logprobs[at + 1 :]
                 seq.num_computed = min(seq.num_computed, seq.num_tokens)
                 seq.finish_reason = reason
                 self.scheduler.register(seq)
@@ -262,7 +341,7 @@ class LLMEngine:
             else:
                 self.scheduler.register(seq)
             outputs.append(
-                StepOutput(seq.request_id, [token], lp, reason is not None, reason,
+                StepOutput(seq.request_id, emitted, lps if wants_lp else None, reason is not None, reason,
                            seq.num_cached_prompt if pos == 0 else None)  # fmt: skip
             )
         return outputs

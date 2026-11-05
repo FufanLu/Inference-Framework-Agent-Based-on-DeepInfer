@@ -14,6 +14,7 @@ One request's life ties the whole system together: from a client's `POST /v1/cha
 | [08](08-observability-and-replay.md) | Observability and replay | One drop settles metrics, audit, usage and live events; stage timelines; token-level replay | ✅ |
 | [09](09-bursts-and-kafka.md) | Bursts, Kafka and admission control | A 2000-request burst sent directly pushes interactive TTFT p99 to 38 s; queued in Kafka and admitted by the router's TTFT model, 103 ms; the knobs trace a Pareto curve; two gateways, one killed, no job lost | ✅ |
 | [10](10-lev-engine.md) | Leviathan's own engine | Paged MLA latent cache (30.4 KiB/token vs 270 KiB expanded), chunked prefill and preemption traced step by step, a prefix cache in the router's hash, batch-invariant kernels and sampling | ✅ (H200 numbers pending) |
+| [11](11-speculative-decoding.md) | Speculative decoding | Drafts decide how many tokens a step confirms, never which: output equals plain decoding bit for bit; n-gram lookup and a draft model sampling with the target's noise (20/24 accepted vs 0/92 greedy at T=1, tiny checkpoints); a prefix-cache bug it exposed | ✅ (H200 numbers pending) |
 
 Every chapter ends with a "Why it is built this way" section answering the design questions people ask most.
 

@@ -11,7 +11,8 @@ context::
     block_tables:    [[3, 0, ...], [7, 9, 1, ...], ...]
     slot_mapping:    where each new token's KV is written (block * B + offset)
     logits_indices:  rows whose logits are sampled (last token of a sequence
-                     whose prompt is complete)
+                     whose prompt is complete; every token of a speculative
+                     verify: the last real token and each draft)
 """
 
 from __future__ import annotations
@@ -51,11 +52,12 @@ class ForwardBatch:
         start_positions: list[int],
         block_tables: list[list[int]],
         block_size: int,
-        sample: list[bool],
+        sample: list[bool] | list[int],
         device: torch.device | str = "cpu",
     ) -> ForwardBatch:
         """`token_chunks[i]` are the new tokens of sequence i, starting at
-        position `start_positions[i]`; `block_tables[i]` covers its context."""
+        position `start_positions[i]`; `block_tables[i]` covers its context.
+        `sample[i]` is how many of its last tokens need logits (True = 1)."""
         ids: list[int] = []
         positions: list[int] = []
         slots: list[int] = []
@@ -70,14 +72,19 @@ class ForwardBatch:
                 positions.append(pos)
                 slots.append(table[pos // block_size] * block_size + pos % block_size)
             starts.append(starts[-1] + len(chunk))
-            if wants:
-                logits.append(starts[-1] - 1)
+            if int(wants) > len(chunk):
+                raise ValueError(f"sequence {seq_index}: {int(wants)} logits rows for {len(chunk)} tokens")
+            logits += range(starts[-1] - int(wants), starts[-1])
         width = max((len(t) for t in block_tables), default=1) or 1
         padded = [t + [0] * (width - len(t)) for t in block_tables]
         seq_lens = [s + len(c) for s, c in zip(start_positions, token_chunks, strict=True)]
 
         def tensor(values, dtype):
-            return torch.tensor(values, dtype=dtype, device=device)
+            # Not torch.tensor(..., device=cuda): a blocking host-to-device
+            # copy synchronises the stream, i.e. waits for every kernel
+            # already queued, which would serialise building the next step
+            # with running this one (overlap scheduling, draft loops).
+            return torch.tensor(values, dtype=dtype).to(device, non_blocking=True)
 
         return cls(
             input_ids=tensor(ids, torch.int64),

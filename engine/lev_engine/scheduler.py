@@ -30,6 +30,10 @@ class ScheduledSeq:
     start: int = -1
     #: After this step every known token is computed, so it samples one.
     completes_prompt: bool = False
+    #: Speculative slots reserved (blocks and budget) after the known tokens.
+    lookahead: int = 0
+    #: The proposer's tokens for those slots (at most `lookahead`), set by the engine.
+    draft: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.start = self.seq.num_computed
@@ -43,7 +47,7 @@ class SchedulerOutput:
 
     @property
     def num_tokens(self) -> int:
-        return sum(s.num_new for s in self.scheduled)
+        return sum(s.num_new + len(s.draft) for s in self.scheduled)
 
 
 class Scheduler:
@@ -52,6 +56,8 @@ class Scheduler:
         self.pool = pool
         self.waiting: list[Sequence] = []
         self.running: list[Sequence] = []
+        #: Draft slots per decode (speculative decoding), 0 when off.
+        self.spec_k = config.num_speculative_tokens if config.speculative else 0
 
     # ------------------------------------------------------------------ queue
 
@@ -86,6 +92,7 @@ class Scheduler:
         seq.block_ids = []
         seq.num_computed = 0
         seq.num_registered = 0
+        seq.num_draft_computed = 0
         seq.num_preemptions += 1
         seq.status = Status.WAITING
         self.running.remove(seq)
@@ -106,7 +113,15 @@ class Scheduler:
             n = min(seq.num_tokens - seq.num_computed, budget)
             if n <= 0:
                 continue
-            need = self._blocks_needed(seq, seq.num_computed + n)
+            lookahead = 0
+            if self.spec_k and seq.output and seq.num_tokens - seq.num_computed == 1:
+                # A decode: room for k draft tokens after its last token
+                # (positions stay below max_model_len, the RoPE table size).
+                lookahead = max(0, min(self.spec_k, budget - 1, self.config.max_model_len - seq.num_tokens))
+                # Drafts take free blocks only: they never preempt anyone.
+                room = (len(seq.block_ids) + self.pool.num_free) * bs - seq.num_tokens
+                lookahead = min(lookahead, max(0, room))
+            need = self._blocks_needed(seq, seq.num_computed + n + lookahead)
             while need > self.pool.num_free:
                 victim = max(
                     (s for s in self.running if s.status is Status.RUNNING and s not in (x.seq for x in out.scheduled)),
@@ -118,8 +133,8 @@ class Scheduler:
             if seq.status is not Status.RUNNING:
                 continue
             seq.block_ids += self.pool.allocate(need)
-            out.scheduled.append(ScheduledSeq(seq, n))
-            budget -= n
+            out.scheduled.append(ScheduledSeq(seq, n, lookahead=lookahead))
+            budget -= n + lookahead
 
         if out.preempted:
             return out  # no admissions while memory is short
@@ -133,12 +148,14 @@ class Scheduler:
                 hit = self.pool.match(seq.block_hashes(bs, seq.num_tokens - 1))
                 seq.block_ids = hit
                 seq.num_registered = len(hit)  # blocks, not tokens
-                seq.num_computed = len(hit) * bs
+                # The draft cache shares the block ids; its KV of a cached
+                # block is trusted too (a stale one only lowers acceptance).
+                seq.num_computed = seq.num_draft_computed = len(hit) * bs
             n = min(seq.num_tokens - seq.num_computed, budget)
             need = self._blocks_needed(seq, seq.num_computed + n)
             if need > self.pool.num_free:
                 self.pool.free(seq.block_ids)  # give the prefix hit back
-                seq.block_ids, seq.num_computed, seq.num_registered = [], 0, 0
+                seq.block_ids, seq.num_computed, seq.num_registered, seq.num_draft_computed = [], 0, 0, 0
                 break
             if seq.num_cached_prompt is None:
                 seq.num_cached_prompt = seq.num_computed

@@ -161,3 +161,34 @@ def test_engine_on_triton_matches_reference_backend(tiny_v2):
                            dtype="float32", device=DEVICE, kernel_backend=backend, batch_invariant=invariant)  # fmt: skip
         outs[backend] = LLMEngine(path, cfg).generate(prompts, params)
     assert outs["triton"] == outs["reference"]
+
+
+def test_speculation_is_bit_for_bit_plain_decoding_on_invariant_kernels(tiny_v2):
+    """With batch-invariant kernels a verify row computes exactly what a
+    decode row computes, so speculative tokens *and* logprobs equal plain
+    decoding's bits, whichever proposer drafts."""
+    from lev_engine.config import EngineConfig
+    from lev_engine.engine import LLMEngine
+    from lev_engine.sequence import SamplingParams
+
+    path, _ = tiny_v2
+    g = torch.Generator().manual_seed(21)
+    chunk = torch.randint(2, 320, (5,), generator=g).tolist()
+    prompts = [chunk * 3, torch.randint(2, 320, (9,), generator=g).tolist(), chunk + [7]]
+    params = [SamplingParams(temperature=t, seed=i, max_tokens=10, ignore_eos=True, logprobs=True)
+              for i, t in enumerate((0.0, 1.0, 0.7))]  # fmt: skip
+    runs, stats = {}, {}
+    for mode in (None, "ngram", "draft"):
+        cfg = EngineConfig(block_size=4, num_blocks=64, max_num_batched_tokens=32, max_model_len=64, dtype="float32",
+                           device=DEVICE, kernel_backend="triton", batch_invariant=True, speculative=mode,
+                           draft_model=str(path) if mode == "draft" else "", num_speculative_tokens=3)  # fmt: skip
+        engine = LLMEngine(path, cfg)
+        for i, (p, sp) in enumerate(zip(prompts, params, strict=True)):
+            engine.add_request(str(i), p, sp)
+        while engine.has_unfinished:
+            engine.step()
+        runs[mode] = [(engine.requests[str(i)].output, engine.requests[str(i)].logprobs) for i in range(3)]
+        stats[mode] = engine.stats
+    assert runs["ngram"] == runs[None]
+    assert runs["draft"] == runs[None]
+    assert stats["draft"].accepted_tokens == stats["draft"].draft_tokens > 0

@@ -3,7 +3,7 @@
 > Code: `engine/lev_engine/` (`models/deepseek_v2.py`, `kv_cache.py`, `scheduler.py`, `sampler.py`, `batch.py`, `ops/reference.py`, `ops/triton/kernels.py`), `worker/leviathan_worker/backends/lev_backend.py`
 > Tests: `engine/tests/` (against transformers in float64; Triton kernels bit for bit under `TRITON_INTERPRET=1`; the worker backend), CI job `engine`
 > Real data: scheduler traces from the tiny test checkpoint (below); H200 measurements from `deploy/slurm/engine_h200.sbatch` (pending, see the end)
-> Previous: [09 Bursts, Kafka and admission control](09-bursts-and-kafka.md)
+> Previous: [09 Bursts, Kafka and admission control](09-bursts-and-kafka.md) · Next: [11 Speculative decoding](11-speculative-decoding.md)
 
 Up to chapter 09, everything below the gateway was someone else's engine (vLLM) or a simulation of one. `lev-engine` is the part of the stack where Leviathan owns the KV cache, the scheduler, the kernels and the numerics. It serves DeepSeek-V2 checkpoints (MLA + DeepSeekMoE; V2-Lite is 15.7 B parameters, 2.4 B active, and fits one H200) and plugs into the worker as `--backend lev`, so the gateway, router, KV events and benchmarks of the earlier chapters run on top of it unchanged.
 
