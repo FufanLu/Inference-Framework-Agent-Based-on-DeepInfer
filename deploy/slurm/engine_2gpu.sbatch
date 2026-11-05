@@ -8,7 +8,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/%x-%j.out
 # Two H200s on one node (NVLink): NCCL collectives and their tuning knobs,
-# then DeepSeek-V2-Lite on one GPU vs TP2 vs EP2 (DP attention).
+# then DeepSeek-V2-Lite on one GPU vs TP2 vs EP2 (DP attention) vs AFD.
 #   sbatch deploy/slurm/engine_2gpu.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
@@ -53,5 +53,7 @@ step nccl-1channel 600 env NCCL_MIN_NCHANNELS=1 NCCL_MAX_NCHANNELS=1 $TR bench/n
 step parallel-single 1500 env CUDA_VISIBLE_DEVICES=0 python bench/engine/parallel.py --mode single --model "$MODEL" --out "$OUT/parallel-single.json"
 step parallel-tp 1500 $TR bench/engine/parallel.py --mode tp --model "$MODEL" --out "$OUT/parallel-tp.json"
 step parallel-ep 1500 $TR bench/engine/parallel.py --mode ep --model "$MODEL" --out "$OUT/parallel-ep.json"
+# 3. Attention on GPU 0, FFN on GPU 1, two micro-batches in ping-pong (vs one: no overlap).
+step afd 1500 $TR bench/engine/afd.py --model "$MODEL" --out "$OUT/afd.json"
 echo "done $(date +%T)"
 cat "$OUT/steps.txt"
