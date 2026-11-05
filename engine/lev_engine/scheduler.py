@@ -149,10 +149,16 @@ class Scheduler:
             budget -= n
         return out
 
-    def commit(self, scheduled: ScheduledSeq) -> None:
-        """After the forward pass: the new tokens' KV is in the cache."""
-        seq = scheduled.seq
-        seq.num_computed += scheduled.num_new
+    def commit(self, scheduled: ScheduledSeq, register: bool = True) -> None:
+        """After the forward pass: the new tokens' KV is in the cache.
+        `register=False` defers prefix registration (overlapped scheduling:
+        the last input token may still be a placeholder)."""
+        scheduled.seq.num_computed += scheduled.num_new
+        if register:
+            self.register(scheduled.seq)
+
+    def register(self, seq: Sequence) -> None:
+        """Put the sequence's full, computed blocks into the prefix cache."""
         full = seq.num_computed // self.pool.block_size
         if full > seq.num_registered:
             hashes = seq.block_hashes(self.pool.block_size, full * self.pool.block_size)

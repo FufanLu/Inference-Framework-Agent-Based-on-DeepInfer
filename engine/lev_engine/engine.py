@@ -14,7 +14,7 @@ from .config import EngineConfig, ModelSpec
 from .kv_cache import BlockPool, BlockRemoved, BlockStored
 from .models import model_class
 from .ops import get_ops
-from .sampler import sample
+from .sampler import sample_tensors
 from .scheduler import Scheduler
 from .sequence import FinishReason, SamplingParams, Sequence, Status
 from .weights import load_state_dict
@@ -31,6 +31,25 @@ class StepOutput:
     finish_reason: FinishReason | None
     #: Set on the first output of a request.
     num_cached_prompt: int | None = None
+
+
+@dataclass
+class _Inflight:
+    """A launched step whose samples have not been read back yet."""
+
+    seqs: list[Sequence]
+    tokens: torch.Tensor  # [S] on the device
+    logprobs: torch.Tensor | None
+    positions: list[int] = field(default_factory=list)  # index of each placeholder in seq.output
+
+    def place_holders(self) -> None:
+        """Append placeholder -(i+1) for sample i: the token is unknown until
+        `LLMEngine._resolve`, but the scheduler can already count it."""
+        for i, seq in enumerate(self.seqs):
+            self.positions.append(len(seq.output))
+            seq.output.append(-(i + 1))
+            if seq.params.logprobs:
+                seq.logprobs.append(0.0)
 
 
 @dataclass
@@ -79,6 +98,7 @@ class LLMEngine:
         self.scheduler = Scheduler(config, self.pool)
         self.requests: dict[str, Sequence] = {}
         self.stats = EngineStats()
+        self._inflight: _Inflight | None = None
 
     def _blocks_for_memory(self, dtype: torch.dtype) -> int:
         if not self.config.kv_cache_memory_bytes:
@@ -103,6 +123,10 @@ class LLMEngine:
         seq = self.requests.pop(request_id, None)
         if seq is not None and seq.status is not Status.FINISHED:
             seq.finish_reason = FinishReason.ABORT
+            while seq.output and seq.output[-1] < 0:  # unresolved placeholders
+                seq.output.pop()
+                if seq.params.logprobs:
+                    seq.logprobs.pop()
             self.scheduler.finish(seq)
 
     def update_weights(self, weights: dict[str, torch.Tensor]) -> int:
@@ -119,32 +143,38 @@ class LLMEngine:
 
     @property
     def has_unfinished(self) -> bool:
-        return self.scheduler.has_work
+        return self.scheduler.has_work or self._inflight is not None
 
     def drain_events(self) -> list[BlockStored | BlockRemoved]:
         return self.pool.drain_events()
 
     # ------------------------------------------------------------------ step
 
-    def _stop(self, seq: Sequence, token: int) -> FinishReason | None:
+    def _stop_at(self, seq: Sequence, token: int, produced: int) -> FinishReason | None:
+        """Stop after the `produced`-th output token (`token`)?"""
         p = seq.params
         if not p.ignore_eos and token == self.spec.eos_token_id:
             return FinishReason.STOP
         if token in p.stop_token_ids:
             return FinishReason.STOP
-        if p.max_tokens and len(seq.output) >= p.max_tokens:
+        if p.max_tokens and produced >= p.max_tokens:
             return FinishReason.LENGTH
-        if seq.num_tokens >= self.config.max_model_len:
+        if len(seq.prompt) + produced >= self.config.max_model_len:
             return FinishReason.LENGTH
         return None
 
     def step(self) -> list[StepOutput]:
+        """Run one step. With `overlap_schedule`, returns the outputs of the
+        previous step (its tokens are read back after this one is launched)."""
         t0 = time.perf_counter()
         plan = self.scheduler.schedule()
         stats = StepStats(num_preempted=len(plan.preempted))
         self.stats.preemptions += len(plan.preempted)
         if not plan.scheduled:
             self.stats.last = stats
+            if self._inflight is not None:
+                outputs, self._inflight = self._resolve(self._inflight), None
+                return outputs
             if self.scheduler.waiting and not self.scheduler.running:
                 seq = self.scheduler.waiting[0]
                 raise RuntimeError(
@@ -152,61 +182,89 @@ class LLMEngine:
                     f"{self.pool.num_blocks} blocks of {self.config.block_size}"
                 )
             return []
-        bs = self.config.block_size
         batch = ForwardBatch.build(
             [s.seq.tokens[s.start : s.start + s.num_new] for s in plan.scheduled],
             [s.start for s in plan.scheduled],
             [s.seq.block_ids for s in plan.scheduled],
-            bs,
+            self.config.block_size,
             [s.completes_prompt for s in plan.scheduled],
             self.device,
         )
+        if self._inflight is not None:
+            # Inputs that are the previous step's samples: placeholder -(i+1)
+            # is row i of its token tensor, still on the device.
+            ids = batch.input_ids
+            batch.input_ids = torch.where(ids < 0, self._inflight.tokens[(-ids - 1).clamp(min=0)], ids)
         t1 = time.perf_counter()
         if self.graphs is not None and self.graphs.can_run(batch):
             logits = self.graphs.run(batch)
         else:
             logits = self.model.forward(batch, self.kv_caches)
         samplers = [s.seq for s in plan.scheduled if s.completes_prompt]
-        result = sample(logits, [q.params for q in samplers], [len(q.output) for q in samplers]) if samplers else None
-        t2 = time.perf_counter()
-
-        outputs: list[StepOutput] = []
-        sampled = iter(range(len(samplers)))
-        for s in plan.scheduled:
-            seq = s.seq
-            self.scheduler.commit(s)
-            if not s.completes_prompt:
-                continue
-            i = next(sampled)
-            token = result.tokens[i]
-            seq.output.append(token)
-            lp = None
-            if result.logprobs is not None:
-                lp = [result.logprobs[i]]
-                seq.logprobs.append(result.logprobs[i])
-            self.stats.generated_tokens += 1
-            if len(seq.output) == 1:
-                self.stats.prompt_tokens += len(seq.prompt)
-                self.stats.cached_prompt_tokens += seq.num_cached_prompt or 0
-            reason = self._stop(seq, token)
-            if reason is not None:
-                seq.finish_reason = reason
-                self.scheduler.finish(seq)
-            outputs.append(
-                StepOutput(
-                    seq.request_id,
-                    [token],
-                    lp,
-                    reason is not None,
-                    reason,
-                    seq.num_cached_prompt if len(seq.output) == 1 else None,
-                )
-            )
+        launched = None
+        if samplers:
+            tokens, logprobs = sample_tensors(logits, [q.params for q in samplers], [len(q.output) for q in samplers])
+            launched = _Inflight(samplers, tokens, logprobs)
         stats.num_seqs = len(plan.scheduled)
         stats.num_tokens = plan.num_tokens
-        stats.schedule_s, stats.forward_s = t1 - t0, t2 - t1
         self.stats.steps += 1
         self.stats.last = stats
+
+        if not self.config.overlap_schedule:
+            for s in plan.scheduled:
+                self.scheduler.commit(s)
+            if launched is not None:
+                launched.place_holders()
+            outputs = self._resolve(launched) if launched is not None else []
+            stats.schedule_s, stats.forward_s = t1 - t0, time.perf_counter() - t1
+            return outputs
+
+        # Overlapped: the KV of this step is "computed" as far as scheduling
+        # goes; its samples are placeholders until the next call reads them.
+        for s in plan.scheduled:
+            self.scheduler.commit(s, register=False)
+        if launched is not None:
+            launched.place_holders()
+        outputs = self._resolve(self._inflight) if self._inflight is not None else []
+        self._inflight = launched
+        stats.schedule_s, stats.forward_s = t1 - t0, time.perf_counter() - t1
+        return outputs
+
+    def _resolve(self, inflight: "_Inflight") -> list[StepOutput]:
+        """Read a step's samples back (this is the synchronisation point),
+        put them in place of the placeholders, apply stop conditions."""
+        tokens = inflight.tokens.tolist()
+        logprobs = inflight.logprobs.tolist() if inflight.logprobs is not None else None
+        outputs: list[StepOutput] = []
+        for i, seq in enumerate(inflight.seqs):
+            if seq.status is Status.FINISHED:
+                continue  # stopped one step earlier (overlap) or aborted
+            pos = inflight.positions[i]
+            token = tokens[i]
+            seq.output[pos] = token
+            lp = None
+            if logprobs is not None and seq.params.logprobs:
+                seq.logprobs[pos] = logprobs[i]
+                lp = [logprobs[i]]
+            self.stats.generated_tokens += 1
+            if pos == 0:
+                self.stats.prompt_tokens += len(seq.prompt)
+                self.stats.cached_prompt_tokens += seq.num_cached_prompt or 0
+            # Stop conditions see only the resolved tokens.
+            reason = self._stop_at(seq, token, pos + 1)
+            if reason is not None:
+                del seq.output[pos + 1 :]  # an overlapped extra step's placeholder
+                del seq.logprobs[pos + 1 :]
+                seq.num_computed = min(seq.num_computed, seq.num_tokens)
+                seq.finish_reason = reason
+                self.scheduler.register(seq)
+                self.scheduler.finish(seq)
+            else:
+                self.scheduler.register(seq)
+            outputs.append(
+                StepOutput(seq.request_id, [token], lp, reason is not None, reason,
+                           seq.num_cached_prompt if pos == 0 else None)  # fmt: skip
+            )
         return outputs
 
     # ------------------------------------------------------------------ helpers

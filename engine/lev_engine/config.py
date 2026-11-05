@@ -190,6 +190,9 @@ class EngineConfig:
     #: Batch-invariant numerics: a request's tokens do not depend on what else
     #: is in the batch (fixed reduction orders, no batch-size-dependent tiling).
     batch_invariant: bool = False
+    #: Schedule and launch step N+1 before reading step N's tokens back
+    #: (placeholders resolved on the device); outputs arrive one step later.
+    overlap_schedule: bool = False
     #: Replay decode steps from CUDA graphs (Triton backend on CUDA only).
     cuda_graph: bool = False
     cuda_graph_max_batch: int = 256

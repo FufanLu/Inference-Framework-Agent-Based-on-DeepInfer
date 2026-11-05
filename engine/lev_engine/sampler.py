@@ -60,6 +60,15 @@ class SampleResult:
 
 def sample(logits: torch.Tensor, params: list[SamplingParams], steps: list[int]) -> SampleResult:
     """Pick one token per row of `logits` [S, V] (fp32 or fp64)."""
+    tokens, logprobs = sample_tensors(logits, params, steps)
+    return SampleResult(tokens.tolist(), logprobs.tolist() if logprobs is not None else None)
+
+
+def sample_tensors(
+    logits: torch.Tensor, params: list[SamplingParams], steps: list[int]
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """`sample` without reading the result back: tokens [S] (and logprobs)
+    stay on the device, so the next step can be launched before they land."""
     rows, vocab = logits.shape
     device = logits.device
     temps = torch.tensor([p.temperature for p in params], dtype=torch.float64, device=device)
@@ -76,7 +85,7 @@ def sample(logits: torch.Tensor, params: list[SamplingParams], steps: list[int])
         scaled = scaled.masked_fill(scaled < threshold, -torch.inf)
 
     top_p = torch.tensor([p.top_p for p in params], dtype=torch.float64, device=device)
-    if bool((top_p < 1.0).any()):
+    if any(p.top_p < 1.0 for p in params):  # decided on the host: no sync
         sorted_logits, order = scaled.sort(dim=-1, descending=True, stable=True)
         probs = sorted_logits.softmax(dim=-1)
         # Drop a token when the tokens strictly before it already reach top_p.
@@ -93,6 +102,5 @@ def sample(logits: torch.Tensor, params: list[SamplingParams], steps: list[int])
 
     logprobs = None
     if any(p.logprobs for p in params):
-        lp = scaled.log_softmax(dim=-1).gather(1, tokens[:, None])[:, 0]
-        logprobs = lp.tolist()
-    return SampleResult(tokens.tolist(), logprobs)
+        logprobs = scaled.log_softmax(dim=-1).gather(1, tokens[:, None])[:, 0]
+    return tokens, logprobs
