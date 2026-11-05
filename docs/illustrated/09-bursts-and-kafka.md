@@ -3,7 +3,7 @@
 > Code: `crates/lev-gateway/src/jobs/` (`mod.rs` runner and admission, `queue.rs`, `kafka.rs`, `offsets.rs`), `crates/lev-router/src/lib.rs` (`min_queue_delay`), `worker/leviathan_worker/backends/sim.py` (`_enqueue`, priority)
 > Tests: `crates/lev-gateway/tests/gateway.rs` (`jobs_*`), `crates/lev-gateway/tests/kafka.rs` (real broker), `crates/lev-control/tests/services.rs` (job store on Postgres), `jobs/offsets.rs` unit tests
 > Real data: `scripts/burst_sweep.sh` + `lev-burst` on `scripts/dev.sh unified 4` (sim, `h200-vllm` profile), results in `bench/results/burst/`
-> Previous: [08 Observability and replay](08-observability-and-replay.md)
+> Previous: [08 Observability and replay](08-observability-and-replay.md) · Next: [10 Leviathan's own engine](10-lev-engine.md)
 
 ## The problem: a burst lands in the engines' queues
 
