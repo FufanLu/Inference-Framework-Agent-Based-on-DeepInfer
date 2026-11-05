@@ -29,6 +29,35 @@ def rand(*shape, dtype=torch.float32):
     return torch.randn(*shape, generator=G).to(device=DEVICE, dtype=dtype)
 
 
+GPU_ONLY = pytest.mark.skipif(DEVICE == "cpu", reason="the Triton interpreter cannot compute in bf16")
+
+
+@GPU_ONLY
+def test_bf16_kernels_match_reference():
+    bf = torch.bfloat16
+    x, w, wn = rand(37, 96, dtype=bf), rand(80, 96, dtype=bf), rand(96, dtype=bf)
+    assert torch.equal(tops.rms_norm(x, wn, 1e-6), reference.rms_norm(x, wn, 1e-6))
+    torch.testing.assert_close(tops.linear_invariant(x, w), reference.linear(x, w), rtol=2e-2, atol=2e-2)
+    H, R, P, BS = 16, 512, 64, 16
+    cache = rand(64, BS, R + P, dtype=bf)
+    batch = paged_batch([[1] * 13, [2], [3] * 5], [0, 300, 9], BS, 64)
+    q_lat, q_rope = rand(batch.num_tokens, H, R, dtype=bf), rand(batch.num_tokens, H, P, dtype=bf)
+    torch.testing.assert_close(
+        tops.mla_attention(q_lat, q_rope, cache, batch, 0.05).float(),
+        reference.mla_attention(q_lat, q_rope, cache, batch, 0.05).float(),
+        rtol=2e-2, atol=2e-2,
+    )  # fmt: skip
+    T, k, E = 40, 6, 64
+    xm = rand(T, 2048, dtype=bf)
+    ids = torch.stack([torch.randperm(E, generator=G)[:k] for _ in range(T)]).to(DEVICE)
+    weights = torch.rand(T, k, generator=G).to(DEVICE)
+    w13, w2 = rand(E, 2 * 1408, 2048, dtype=bf) * 0.02, rand(E, 2048, 1408, dtype=bf) * 0.02
+    torch.testing.assert_close(
+        tops.moe_routed(xm, ids, weights, w13, w2).float(), reference.moe_routed(xm, ids, weights, w13, w2).float(),
+        rtol=3e-2, atol=3e-2,
+    )  # fmt: skip
+
+
 def test_rms_norm_and_silu_match_reference():
     x, w = rand(37, 96), rand(96)
     torch.testing.assert_close(tops.rms_norm(x, w, 1e-6), reference.rms_norm(x, w, 1e-6))

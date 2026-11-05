@@ -33,9 +33,11 @@ def rms_norm_kernel(x_ptr, w_ptr, out_ptr, n_cols, stride_x, stride_out, eps, BL
     var = tl.sum(x * x, axis=0) / n_cols
     y = x * tl.rsqrt(var + eps)
     w = tl.load(w_ptr + cols, mask=mask, other=0.0)
-    # Same rounding as the reference: normalise in fp32, cast, then scale.
-    y = y.to(w.dtype) * w
-    tl.store(out_ptr + row * stride_out + cols, y, mask=mask)
+    # Same rounding as the reference (normalise in fp32, round to the weight
+    # dtype, multiply in that dtype): the exact product of two bf16 values
+    # fits in fp32, so multiplying in fp32 and rounding once is identical.
+    y = y.to(w.dtype).to(tl.float32) * w.to(tl.float32)
+    tl.store(out_ptr + row * stride_out + cols, y.to(out_ptr.dtype.element_ty), mask=mask)
 
 
 @triton.jit

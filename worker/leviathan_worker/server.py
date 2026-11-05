@@ -193,9 +193,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        choices=["sim", "vllm", "deepinfer"],
+        choices=["sim", "vllm", "lev", "deepinfer"],
         default="sim",
-        help="engine backend: sim (simulated), vllm (Hopper GPUs), deepinfer (SM100 / Ascend 950 only)",
+        help="engine backend: sim (simulated), vllm (Hopper GPUs), lev (Leviathan's own engine, engine/), "
+        "deepinfer (SM100 / Ascend 950 only)",
     )
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on")
     parser.add_argument("--port", type=int, default=50051, help="0 picks a free port")
@@ -221,6 +222,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     real.add_argument("--kv-events-port", type=int, default=5557, help="vllm: port of vLLM's KV event publisher")
     real.add_argument("--kv-event-group", type=int, help="vllm: KV cache group to follow (default: first full-attention group)")
+    real.add_argument("--lev-model", default="", help="lev: local checkpoint directory (DeepSeek-V2 family)")
+    real.add_argument(
+        "--lev-config", default="{}", help='lev: JSON EngineConfig fields, e.g. {"device":"cuda","dtype":"bfloat16"}'
+    )
     real.add_argument("--deepinfer-model", default="", help="deepinfer: HF model ID or local checkpoint")
     real.add_argument("--deepinfer-kwargs", default="{}", help="deepinfer: JSON keyword arguments for LLM(...)")
     parser.add_argument("--max-waiting", type=int, default=DEFAULT_MAX_WAITING, help="queued requests before refusing")
@@ -254,6 +259,14 @@ def config_from_args(args: argparse.Namespace) -> ServerConfig:
         if not args.vllm_args.strip():
             raise ValueError("--backend vllm needs --vllm-args (the model path and `vllm serve` flags)")
         engine_args = args.vllm_args
+    elif args.backend == "lev":
+        if not args.lev_model:
+            raise ValueError("--backend lev needs --lev-model (a checkpoint directory)")
+        try:
+            json.loads(args.lev_config)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"--lev-config is not JSON: {exc}") from exc
+        engine_args = args.lev_config
     elif args.backend == "deepinfer":
         try:
             json.loads(args.deepinfer_kwargs)
@@ -274,7 +287,7 @@ def config_from_args(args: argparse.Namespace) -> ServerConfig:
         engine_args=engine_args,
         kv_events_port=args.kv_events_port,
         kv_event_group=args.kv_event_group,
-        model_path=args.deepinfer_model,
+        model_path=args.lev_model if args.backend == "lev" else args.deepinfer_model,
     )
 
 
@@ -299,6 +312,18 @@ def build_engine(config: ServerConfig) -> Engine:
                 vllm_args=config.engine_args,
                 kv_events_port=config.kv_events_port,
                 kv_event_group=config.kv_event_group,
+            )
+        )
+    if config.backend == "lev":
+        from .backends.lev_backend import LevConfig, LevEngine  # noqa: PLC0415 - needs torch and lev_engine
+
+        return LevEngine(
+            LevConfig(
+                worker_id=config.worker_id,
+                model_name=config.model,
+                model_path=config.model_path,
+                engine=json.loads(config.engine_args or "{}"),
+                role=config.role,
             )
         )
     if config.backend == "deepinfer":
