@@ -50,3 +50,21 @@ jobs:
           python-version: "3.12"
       - run: python -m venv .venv && .venv/bin/pip install -e 'worker[dev]'
       - run: make test-py
+
+  engine:
+    runs-on: ubuntu-latest
+    env:
+      TRITON_INTERPRET: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # CPU wheels: the tests run the reference kernels, and the Triton kernels
+      # under TRITON_INTERPRET=1.
+      - run: |
+          python -m venv .venv
+          .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+          .venv/bin/pip install -e 'engine[dev,triton]'
+      - run: make test-engine
+

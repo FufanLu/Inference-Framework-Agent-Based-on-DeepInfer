@@ -1,0 +1,28 @@
+[project]
+name = "lev-engine"
+version = "0.1.0"
+description = "Leviathan's own inference engine: paged MLA KV cache, continuous batching, batch-invariant kernels."
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "torch>=2.6",
+    "safetensors>=0.4",
+    "xxhash>=3.5",
+]
+
+[project.optional-dependencies]
+# Triton kernels; Linux only (tests run them on CPU with TRITON_INTERPRET=1).
+triton = ["triton>=3.2"]
+# transformers is the numerical reference in tests, never a runtime dependency.
+dev = ["pytest>=8", "transformers>=4.57", "numpy>=1.26"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["lev_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
