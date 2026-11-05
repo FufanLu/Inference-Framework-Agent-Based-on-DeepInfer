@@ -66,6 +66,8 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
           .venv/bin/pip install -e 'engine[dev,triton]'
+      # Interpreter numerics run on the host's BLAS/SIMD; runners vary by CPU.
+      - run: lscpu | grep -E 'Model name|Flags' | cut -c1-160
       - run: make test-engine
       - run: make test-rl
 
