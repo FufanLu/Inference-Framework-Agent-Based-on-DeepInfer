@@ -192,3 +192,35 @@ def test_speculation_is_bit_for_bit_plain_decoding_on_invariant_kernels(tiny_v2)
     assert runs["ngram"] == runs[None]
     assert runs["draft"] == runs[None]
     assert stats["draft"].accepted_tokens == stats["draft"].draft_tokens > 0
+
+
+def test_the_whole_model_is_batch_invariant(tiny_v2):
+    """Per-kernel invariance is not enough: any op outside the kernels (the
+    MoE router's GEMM once was one) breaks it. A sequence's logits must be
+    the same bits alone and next to others, in prefill and in decode."""
+    from lev_engine.batch import ForwardBatch
+    from lev_engine.config import ModelSpec
+    from lev_engine.models.deepseek_v2 import DeepseekV2
+    from lev_engine.ops import get_ops
+    from lev_engine.weights import load_state_dict
+
+    path, _ = tiny_v2
+    spec = ModelSpec.from_pretrained(path)
+    model = DeepseekV2(spec, load_state_dict(path, torch.float32, DEVICE), get_ops("triton", True), 128, DEVICE)
+    g = torch.Generator().manual_seed(5)
+    prompts = [torch.randint(2, 320, (n,), generator=g).tolist() for n in (13, 4, 29, 7)]
+
+    def logits(idx: list[int], decode: bool) -> torch.Tensor:
+        cache = [torch.zeros(model.kv_cache_shape(64, 4), device=DEVICE) for _ in model.layers]
+        tables = [list(range(16 * i, 16 * (i + 1))) for i in range(len(idx))]
+        ps = [prompts[i] for i in idx]
+        out = model.forward(ForwardBatch.build(ps, [0] * len(ps), tables, 4, [True] * len(ps), DEVICE), cache)
+        if decode:  # one more token each, its context in the cache
+            nxt = [[int(t)] for t in out.argmax(-1).tolist()]
+            out = model.forward(ForwardBatch.build(nxt, [len(p) for p in ps], tables, 4, [True] * len(ps), DEVICE), cache)
+        return out
+
+    for decode in (False, True):
+        crowd = logits([0, 1, 2, 3], decode)
+        for i in range(4):
+            assert torch.equal(logits([i], decode)[0], crowd[i]), (decode, i)

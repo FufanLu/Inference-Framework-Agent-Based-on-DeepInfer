@@ -50,13 +50,19 @@ def silu_and_mul(x: torch.Tensor) -> torch.Tensor:
     return out.view(*x.shape[:-1], n)
 
 
+def _ieee(t: torch.Tensor) -> bool:
+    """fp32 inputs: full-precision dots, as torch's fp32 matmul (no TF32); bf16: tensor cores."""
+    return t.dtype == torch.float32
+
+
 def _matmul(a, b, c, M, N, K, batch, sa, sb, sc) -> None:
     """sa = (batch, m, k), sb = (batch, n, k), sc = (batch, m, n) strides."""
     if M == 0:
         return
     grid = (triton.cdiv(M, MM_BLOCK_M), triton.cdiv(N, MM_BLOCK_N), batch)
     kernels.matmul_kernel[grid](
-        a, b, c, M, N, K, *sa, *sb, *sc, BLOCK_M=MM_BLOCK_M, BLOCK_N=MM_BLOCK_N, BLOCK_K=MM_BLOCK_K
+        a, b, c, M, N, K, *sa, *sb, *sc, BLOCK_M=MM_BLOCK_M, BLOCK_N=MM_BLOCK_N, BLOCK_K=MM_BLOCK_K,
+        IEEE=_ieee(a),
     )
 
 
@@ -100,7 +106,7 @@ def mla_attention(q_latent, q_rope, cache, batch, scale) -> torch.Tensor:
             H, R, P, cache.shape[1], scale,
             q_latent.stride(0), q_latent.stride(1), q_rope.stride(0), q_rope.stride(1),
             cache.stride(1), batch.block_tables.stride(0), out.stride(0), out.stride(1),
-            BLOCK_H=_pow2(H), BLOCK_R=_pow2(R), BLOCK_P=_pow2(P), BLOCK_N=ATTN_BLOCK_N,
+            BLOCK_H=_pow2(H), BLOCK_R=_pow2(R), BLOCK_P=_pow2(P), BLOCK_N=ATTN_BLOCK_N, IEEE=_ieee(q_latent),
         )  # fmt: skip
     return out
 
@@ -115,7 +121,7 @@ def gqa_attention(q, cache, batch, scale, num_kv_heads) -> torch.Tensor:
             q, cache, out, batch.block_tables, batch.token_seq, batch.positions,
             G, D, num_kv_heads, cache.shape[1], scale,
             q.stride(0), q.stride(1), cache.stride(1), batch.block_tables.stride(0), out.stride(0), out.stride(1),
-            BLOCK_G=_pow2(G), BLOCK_D=_pow2(D), BLOCK_N=ATTN_BLOCK_N,
+            BLOCK_G=_pow2(G), BLOCK_D=_pow2(D), BLOCK_N=ATTN_BLOCK_N, IEEE=_ieee(q),
         )  # fmt: skip
     return out
 
@@ -163,12 +169,12 @@ def moe_routed(x, topk_ids, topk_weights, w13, w2) -> torch.Tensor:
         kernels.moe_gemm_kernel[(blocks, triton.cdiv(inter, MOE_BLOCK_N))](
             x, w13, h, rows, src, block_expert, inter, hidden, rows.numel(),
             x.stride(0), w13.stride(0), w13.stride(1), w13.stride(2), h.stride(0),
-            FUSE_SILU=True, BLOCK_M=MOE_BLOCK_M, BLOCK_N=MOE_BLOCK_N, BLOCK_K=MOE_BLOCK_K,
+            FUSE_SILU=True, BLOCK_M=MOE_BLOCK_M, BLOCK_N=MOE_BLOCK_N, BLOCK_K=MOE_BLOCK_K, IEEE=_ieee(x),
         )  # fmt: skip
         kernels.moe_gemm_kernel[(blocks, triton.cdiv(hidden, MOE_BLOCK_N))](
             h, w2, y, rows, rows, block_expert, hidden, inter, rows.numel(),
             h.stride(0), w2.stride(0), w2.stride(1), w2.stride(2), y.stride(0),
-            FUSE_SILU=False, BLOCK_M=MOE_BLOCK_M, BLOCK_N=MOE_BLOCK_N, BLOCK_K=MOE_BLOCK_K,
+            FUSE_SILU=False, BLOCK_M=MOE_BLOCK_M, BLOCK_N=MOE_BLOCK_N, BLOCK_K=MOE_BLOCK_K, IEEE=_ieee(x),
         )  # fmt: skip
     weighted = acc(y.view(tokens, k, hidden)) * topk_weights.unsqueeze(-1)
     out = weighted[:, 0]

@@ -52,12 +52,23 @@ def silu_and_mul_kernel(x_ptr, out_ptr, n_cols, stride_x, stride_out, BLOCK: tl.
 
 
 @triton.jit
+def _dot(a, b, IEEE: tl.constexpr):
+    """tl.dot; IEEE multiplies fp32 inputs in full fp32 (the default is TF32
+    on tensor-core GPUs), as torch's fp32 matmul does."""
+    if IEEE:
+        return tl.dot(a, b, input_precision="ieee")
+    else:
+        return tl.dot(a, b)
+
+
+@triton.jit
 def matmul_kernel(
     a_ptr, b_ptr, c_ptr, M, N, K,
     stride_ab, stride_am, stride_ak, stride_bb, stride_bn, stride_bk, stride_cb, stride_cm, stride_cn,
-    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, IEEE: tl.constexpr,
 ):  # fmt: skip
-    """C[b, M, N] = A[b, M, K] @ B[b, N, K]^T, fp32 accumulation (b: grid axis 2)."""
+    """C[b, M, N] = A[b, M, K] @ B[b, N, K]^T, fp32 accumulation (b: grid axis 2).
+    IEEE: see _dot."""
     pid_m = tl.program_id(0)
     pid_n = tl.program_id(1)
     pid_b = tl.program_id(2).to(tl.int64)
@@ -74,7 +85,7 @@ def matmul_kernel(
                     mask=(rm[:, None] < M) & (kk[None, :] < K), other=0.0)  # fmt: skip
         b = tl.load(b_ptr + rn[None, :] * stride_bn + kk[:, None] * stride_bk,
                     mask=(rn[None, :] < N) & (kk[:, None] < K), other=0.0)  # fmt: skip
-        acc += tl.dot(a, b)
+        acc += _dot(a, b, IEEE)
     tl.store(c_ptr + rm[:, None] * stride_cm + rn[None, :] * stride_cn,
              acc.to(c_ptr.dtype.element_ty), mask=(rm[:, None] < M) & (rn[None, :] < N))  # fmt: skip
 
@@ -86,7 +97,7 @@ def mla_attention_kernel(
     H, R, P, BS, scale,
     stride_ql_t, stride_ql_h, stride_qr_t, stride_qr_h,
     stride_cache_slot, stride_bt, stride_o_t, stride_o_h,
-    BLOCK_H: tl.constexpr, BLOCK_R: tl.constexpr, BLOCK_P: tl.constexpr, BLOCK_N: tl.constexpr,
+    BLOCK_H: tl.constexpr, BLOCK_R: tl.constexpr, BLOCK_P: tl.constexpr, BLOCK_N: tl.constexpr, IEEE: tl.constexpr,
 ):  # fmt: skip
     t = tl.program_id(0)
     seq = tl.load(token_seq_ptr + t)
@@ -111,13 +122,13 @@ def mla_attention_kernel(
                          mask=valid[:, None] & (r[None, :] < R), other=0.0)  # fmt: skip
         kv_rope = tl.load(cache_ptr + slot[:, None] * stride_cache_slot + R + p[None, :],
                           mask=valid[:, None] & (p[None, :] < P), other=0.0)  # fmt: skip
-        s = tl.dot(q_lat, tl.trans(kv_lat)) + tl.dot(q_rope, tl.trans(kv_rope))
+        s = _dot(q_lat, tl.trans(kv_lat), IEEE) + _dot(q_rope, tl.trans(kv_rope), IEEE)
         s = tl.where(valid[None, :], s * scale, float("-inf"))
         m_new = tl.maximum(m_i, tl.max(s, axis=1))
         alpha = tl.exp(m_i - m_new)
         probs = tl.exp(s - m_new[:, None])
         l_i = l_i * alpha + tl.sum(probs, axis=1)
-        acc = acc * alpha[:, None] + tl.dot(probs.to(kv_lat.dtype), kv_lat)
+        acc = acc * alpha[:, None] + _dot(probs.to(kv_lat.dtype), kv_lat, IEEE)
         m_i = m_new
     out = acc / l_i[:, None]
     tl.store(out_ptr + t * stride_o_t + h[:, None] * stride_o_h + r[None, :],
@@ -129,7 +140,7 @@ def moe_gemm_kernel(
     a_ptr, w_ptr, out_ptr, rows_ptr, src_rows_ptr, block_expert_ptr,
     N, K, num_valid,
     stride_am, stride_we, stride_wn, stride_wk, stride_om,
-    FUSE_SILU: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    FUSE_SILU: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, IEEE: tl.constexpr,
 ):  # fmt: skip
     """Grouped GEMM over rows sorted by expert.
 
@@ -158,10 +169,10 @@ def moe_gemm_kernel(
                     mask=live[:, None] & (kk[None, :] < K), other=0.0)  # fmt: skip
         wmask = (rn[None, :] < N) & (kk[:, None] < K)
         w = tl.load(w_base + rn[None, :] * stride_wn + kk[:, None] * stride_wk, mask=wmask, other=0.0)
-        acc += tl.dot(a, w)
+        acc += _dot(a, w, IEEE)
         if FUSE_SILU:
             wu = tl.load(w_base + (rn[None, :] + N) * stride_wn + kk[:, None] * stride_wk, mask=wmask, other=0.0)
-            acc_up += tl.dot(a, wu)
+            acc_up += _dot(a, wu, IEEE)
     if FUSE_SILU:
         acc = acc * tl.sigmoid(acc) * acc_up
     tl.store(out_ptr + dst[:, None].to(tl.int64) * stride_om + rn[None, :],
@@ -173,7 +184,7 @@ def gqa_attention_kernel(
     q_ptr, cache_ptr, out_ptr, block_tables_ptr, token_seq_ptr, positions_ptr,
     G, D, HKV, BS, scale,
     stride_q_t, stride_q_h, stride_cache_slot, stride_bt, stride_o_t, stride_o_h,
-    BLOCK_G: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_N: tl.constexpr,
+    BLOCK_G: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_N: tl.constexpr, IEEE: tl.constexpr,
 ):  # fmt: skip
     """Program (t, kv_head): the G query heads sharing one KV head, for one
     token. Cache rows are [K head 0..HKV-1 | V head 0..HKV-1], D values each.
@@ -201,13 +212,13 @@ def gqa_attention_kernel(
         kv_mask = valid[:, None] & (d[None, :] < D)
         k = tl.load(cache_ptr + slot[:, None] * stride_cache_slot + k_off + d[None, :], mask=kv_mask, other=0.0)
         v = tl.load(cache_ptr + slot[:, None] * stride_cache_slot + v_off + d[None, :], mask=kv_mask, other=0.0)
-        s = tl.dot(q, tl.trans(k))
+        s = _dot(q, tl.trans(k), IEEE)
         s = tl.where(valid[None, :], s * scale, float("-inf"))
         m_new = tl.maximum(m_i, tl.max(s, axis=1))
         alpha = tl.exp(m_i - m_new)
         p = tl.exp(s - m_new[:, None])
         l_i = l_i * alpha + tl.sum(p, axis=1)
-        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
+        acc = acc * alpha[:, None] + _dot(p.to(v.dtype), v, IEEE)
         m_i = m_new
     out = acc / l_i[:, None]
     tl.store(out_ptr + t * stride_o_t + heads[:, None] * stride_o_h + d[None, :],

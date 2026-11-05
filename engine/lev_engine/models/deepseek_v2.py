@@ -196,7 +196,9 @@ class DeepseekV2:
     def route(self, m: _Moe, h: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Top-k experts and their weights (fp32) per token: DeepSeek-V2 softmax routing."""
         s = self.spec
-        scores = (h.float() @ m.gate.t()).softmax(dim=-1)
+        # Through ops.linear: with batch_invariant the router's fp32 GEMM gets
+        # the fixed-tile kernel too (a bare matmul here broke invariance).
+        scores = self.ops.linear(h.float(), m.gate).softmax(dim=-1)
         if s.topk_method == "group_limited_greedy":
             tokens = scores.shape[0]
             groups = scores.view(tokens, s.n_group, -1).max(dim=-1).values
