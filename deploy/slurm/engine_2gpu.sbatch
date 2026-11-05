@@ -55,5 +55,42 @@ step parallel-tp 1500 $TR bench/engine/parallel.py --mode tp --model "$MODEL" --
 step parallel-ep 1500 $TR bench/engine/parallel.py --mode ep --model "$MODEL" --out "$OUT/parallel-ep.json"
 # 3. Attention on GPU 0, FFN on GPU 1, two micro-batches in ping-pong (vs one: no overlap).
 step afd 1500 $TR bench/engine/afd.py --model "$MODEL" --out "$OUT/afd.json"
+
+# 4. Serving: gateway (V2 template, cache_aware) + one lev worker per GPU,
+#    routing policies compared with lev-bench (needs deploy/slurm/build.sbatch).
+cat > "$OUT/gateway.toml" <<TOML
+listen = "127.0.0.1:8080"
+[[models]]
+name = "DeepSeek-V2-Lite-Chat"
+aliases = ["v2-lite"]
+version = "v2"
+tokenizer = "$MODEL/tokenizer.json"
+context_limit = 8192
+[router]
+policy = "cache_aware"
+index_mode = "exact"
+[dispatch]
+ready_timeout_ms = 600000
+[[workers]]
+endpoint = "http://127.0.0.1:51061"
+[[workers]]
+endpoint = "http://127.0.0.1:51062"
+TOML
+LEV_CFG='{"device":"cuda","dtype":"bfloat16","kernel_backend":"triton","block_size":16,"kv_cache_memory_bytes":60000000000,"max_model_len":8192,"max_num_batched_tokens":8192,"max_num_seqs":128}'
+for i in 0 1; do
+    (cd worker && CUDA_VISIBLE_DEVICES=$i PYTHONPATH=.:../engine python -m leviathan_worker.server --backend lev \
+        --lev-model "$MODEL" --lev-config "$LEV_CFG" --model DeepSeek-V2-Lite-Chat --host 127.0.0.1 \
+        --port $((51061 + i)) --worker-id "lev-$i" --log-format text) > "$OUT/worker-$i.log" 2>&1 &
+done
+target/release/lev-gateway --config "$OUT/gateway.toml" > "$OUT/gateway.log" 2>&1 &
+trap 'kill $(jobs -p) 2>/dev/null' EXIT
+if lev_wait_ready 2 900; then
+    step serve-bench 1800 target/release/lev-bench --gateway http://127.0.0.1:8080 --model v2-lite \
+        --workload agent-shared-prefix --requests 400 --concurrency 32 --max-tokens 64 \
+        --policies round_robin,least_load,p2c,cache_aware --tag h200-lev-v2lite --out "$OUT/serve-bench"
+    curl -s http://127.0.0.1:8080/metrics > "$OUT/metrics.prom"
+else
+    echo "serve: workers not ready" | tee -a "$OUT/steps.txt"
+fi
 echo "done $(date +%T)"
 cat "$OUT/steps.txt"
