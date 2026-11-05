@@ -2,9 +2,9 @@ PYTHON ?= .venv/bin/python
 PY := $(abspath $(PYTHON))
 GEN_DIR := worker/leviathan_worker/_gen
 
-.PHONY: check test-rust test-py test-engine proto-py fmt lint venv
+.PHONY: check test-rust test-py test-engine test-rl proto-py fmt lint venv
 
-check: test-rust test-py test-engine
+check: test-rust test-py test-engine test-rl
 
 test-rust:
 	cargo test --workspace
@@ -15,6 +15,9 @@ test-py: proto-py
 # The engine's tests import the worker's hashing (convention check), hence PYTHONPATH.
 test-engine:
 	cd engine && PYTHONPATH=../worker $(PY) -m pytest -q
+
+test-rl:
+	cd rl && PYTHONPATH=.:../worker $(PY) -m pytest -q
 
 proto-py:
 	mkdir -p $(GEN_DIR)

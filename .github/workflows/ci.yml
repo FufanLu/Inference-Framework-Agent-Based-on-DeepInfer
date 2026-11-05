@@ -67,4 +67,5 @@ jobs:
           .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
           .venv/bin/pip install -e 'engine[dev,triton]'
       - run: make test-engine
+      - run: make test-rl
 

@@ -93,6 +93,18 @@ class LLMEngine:
             seq.finish_reason = FinishReason.ABORT
             self.scheduler.finish(seq)
 
+    def update_weights(self, weights: dict[str, torch.Tensor]) -> int:
+        """Load new weights (RL weight sync). Every cached block was computed
+        with the old weights, so the prefix cache is dropped; requests still
+        running would continue on stale KV, so none may be in flight."""
+        if self.scheduler.running or self.scheduler.waiting:
+            raise RuntimeError("update_weights needs an idle engine (finish or abort requests first)")
+        if not hasattr(self.model, "update_weights"):
+            raise NotImplementedError(f"{type(self.model).__name__} does not support weight updates")
+        applied = self.model.update_weights(weights)
+        self.pool.reset_prefix_cache()
+        return applied
+
     @property
     def has_unfinished(self) -> bool:
         return self.scheduler.has_work
@@ -183,6 +195,27 @@ class LLMEngine:
         return outputs
 
     # ------------------------------------------------------------------ helpers
+
+    @torch.inference_mode()
+    def score(self, sequences: list[list[int]], prompt_lens: list[int]) -> list[list[float]]:
+        """Log-probabilities (temperature 1) of every token after the prompt,
+        recomputed with the engine's kernels: what a trainer compares rollout
+        logprobs against. Runs one sequence at a time through its own blocks."""
+        out: list[list[float]] = []
+        bs = self.config.block_size
+        for tokens, plen in zip(sequences, prompt_lens, strict=True):
+            if not 0 < plen < len(tokens):
+                raise ValueError("each sequence needs a prompt and at least one scored token")
+            blocks = self.pool.allocate((len(tokens) + bs - 1) // bs)
+            try:
+                batch = ForwardBatch.build([tokens], [0], [blocks], bs, [True], self.device)
+                batch.logits_indices = torch.arange(plen - 1, len(tokens) - 1, device=self.device)
+                logits = self.model.forward(batch, self.kv_caches).to(torch.float64)
+                targets = torch.tensor(tokens[plen:], device=self.device)
+                out.append(logits.log_softmax(-1).gather(1, targets[:, None])[:, 0].tolist())
+            finally:
+                self.pool.free(blocks)
+        return out
 
     def generate(
         self, prompts: Iterable[list[int]], params: SamplingParams | list[SamplingParams] | None = None

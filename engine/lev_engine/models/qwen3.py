@@ -64,6 +64,55 @@ class Qwen3:
         self.rope = RotaryCache(spec.rope, spec.head_dim, max_position, self.device, interleaved=False)
         self.scale = spec.head_dim**-0.5
 
+    @torch.no_grad()
+    def update_weights(self, weights: dict[str, torch.Tensor]) -> int:
+        """Copy checkpoint-named tensors (e.g. a trainer's state_dict) into the
+        model in place, into the fused qkv / gate-up slices. Returns how many
+        tensors were applied; unknown names raise."""
+        s = self.spec
+        d, hq, hkv = s.head_dim, s.num_heads, s.num_kv_heads
+        qkv_rows = {"q": (0, hq * d), "k": (hq * d, (hq + hkv) * d), "v": ((hq + hkv) * d, (hq + 2 * hkv) * d)}
+        inter = s.intermediate_size
+        applied = 0
+        for name, tensor in weights.items():
+            parts = name.split(".")
+            if name == "model.embed_tokens.weight":
+                self.embed.copy_(tensor)
+            elif name == "model.norm.weight":
+                self.norm.copy_(tensor)
+            elif name == "lm_head.weight":
+                if s.tie_word_embeddings:
+                    continue  # shares the embedding
+                self.lm_head.copy_(tensor)
+            elif parts[:2] == ["model", "layers"]:
+                layer = self.layers[int(parts[2])]
+                leaf = ".".join(parts[3:])
+                if leaf == "input_layernorm.weight":
+                    layer.input_norm.copy_(tensor)
+                elif leaf == "post_attention_layernorm.weight":
+                    layer.post_attention_norm.copy_(tensor)
+                elif leaf in ("self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight"):
+                    lo, hi = qkv_rows[parts[4][0]]
+                    layer.qkv[lo:hi].copy_(tensor)
+                elif leaf == "self_attn.q_norm.weight":
+                    layer.q_norm.copy_(tensor)
+                elif leaf == "self_attn.k_norm.weight":
+                    layer.k_norm.copy_(tensor)
+                elif leaf == "self_attn.o_proj.weight":
+                    layer.o.copy_(tensor)
+                elif leaf == "mlp.gate_proj.weight":
+                    layer.w13[:inter].copy_(tensor)
+                elif leaf == "mlp.up_proj.weight":
+                    layer.w13[inter:].copy_(tensor)
+                elif leaf == "mlp.down_proj.weight":
+                    layer.w2.copy_(tensor)
+                else:
+                    raise KeyError(name)
+            else:
+                raise KeyError(name)
+            applied += 1
+        return applied
+
     def kv_cache_shape(self, num_blocks: int, block_size: int) -> tuple[int, int, int]:
         return (num_blocks, block_size, self.spec.kv_cache_dim)
 
