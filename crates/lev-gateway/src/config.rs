@@ -43,7 +43,8 @@ pub struct ModelConfig {
     /// Other names clients may use; workers may report any of them too.
     #[serde(default)]
     pub aliases: Vec<String>,
-    /// Prompt encoding: `v4.1` or `v4`.
+    /// Prompt encoding: `v4.1`, `v4`, or `v2` (DeepSeek-V2 chat template,
+    /// text only; for the lev engine).
     #[serde(default = "default_version")]
     pub version: String,
     /// `tokenizer.json` of the model.

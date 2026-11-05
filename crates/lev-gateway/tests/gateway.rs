@@ -710,6 +710,52 @@ async fn prompt_inspector_shows_the_rendered_prompt() {
 }
 
 #[tokio::test]
+async fn v2_models_use_the_v2_chat_template_and_refuse_what_it_cannot_express() {
+    let cluster = cluster(&one_worker(), |config| {
+        config.models[0].version = "v2".to_string()
+    })
+    .await;
+    let conversation = json!([
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello!"},
+        {"role": "user", "content": "Bye"},
+    ]);
+    let (status, body) = post(
+        &cluster.app,
+        "/v1/leviathan/render",
+        json!({"model": MODEL, "messages": conversation}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        body["prompt"],
+        "<｜begin▁of▁sentence｜>Be brief.\n\nUser: Hi\n\nAssistant: Hello!<｜end▁of▁sentence｜>User: Bye\n\nAssistant:"
+    );
+    let tokens = body["tokens"].as_array().unwrap();
+    assert_eq!(tokens[0]["special"], true);
+    assert_eq!(tokens.iter().filter(|t| t["special"] == true).count(), 2);
+
+    let (status, body) = post(
+        &cluster.app,
+        "/v1/chat/completions",
+        json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for refused in [
+        json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}], "thinking": {"type": "enabled"}}),
+        json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}],
+               "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]}),
+    ] {
+        let (status, body) = post(&cluster.app, "/v1/chat/completions", refused).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.contains("unsupported_feature"), "{body}");
+    }
+}
+
+#[tokio::test]
 async fn replay_reproduces_the_output() {
     let cluster = cluster(&one_worker(), |_| {}).await;
     let response = cluster

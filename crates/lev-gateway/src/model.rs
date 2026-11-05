@@ -6,6 +6,8 @@ use std::sync::Arc;
 use anyhow::{Context, bail};
 use deepseek_recipe::request::{ConversionOptions, ModelVersion};
 use deepseek_recipe_core::conversation::Conversation;
+use deepseek_recipe_core::messages::InputMessage;
+use deepseek_recipe_core::prompt::Prompt;
 use deepseek_recipe_encoding::dsv4::DeepseekV4Encoding;
 use deepseek_recipe_encoding::dsv41::DeepseekV41Encoding;
 use deepseek_recipe_encoding::{PromptEncoding, PromptTokenizer, RenderedPrompt, TokenizerEncoder};
@@ -16,6 +18,45 @@ use crate::config::ModelConfig;
 enum Encoding {
     V4(DeepseekV4Encoding),
     V41(DeepseekV41Encoding),
+    /// DeepSeek-V2 chat template (served by the lev engine): plain
+    /// `User:` / `Assistant:` turns, no thinking, tools or images.
+    V2Chat,
+}
+
+const BOS: &str = "<｜begin▁of▁sentence｜>";
+const EOS: &str = "<｜end▁of▁sentence｜>";
+
+/// The DeepSeek-V2 chat template, as in the checkpoints' tokenizer_config.json:
+/// `bos {system}\n\n User: {user}\n\n Assistant: {assistant}eos ... Assistant:`.
+fn render_v2(conversation: &Conversation) -> RenderedPrompt {
+    let mut prompt = Prompt::special(BOS);
+    for message in &conversation.messages {
+        match message {
+            InputMessage::System { content, .. } => {
+                prompt += content;
+                prompt.push_plain("\n\n");
+            }
+            InputMessage::User { content, .. } => {
+                prompt.push_plain("User: ");
+                prompt += content;
+                prompt.push_plain("\n\n");
+            }
+            InputMessage::Assistant { content, .. } => {
+                prompt.push_plain("Assistant: ");
+                prompt.push_plain(content);
+                prompt.push_special(EOS);
+            }
+            // Rejected before rendering (`ServedModel::check`).
+            InputMessage::Tool { .. } | InputMessage::LatestReminder { .. } => {}
+        }
+    }
+    prompt.push_plain("Assistant:");
+    let (prompt, special_ranges) = prompt.into_parts();
+    RenderedPrompt {
+        prompt,
+        special_ranges,
+        image_sources: Vec::new(),
+    }
 }
 
 /// One model the gateway serves.
@@ -48,9 +89,12 @@ impl std::fmt::Debug for ServedModel {
 
 impl ServedModel {
     pub fn from_config(config: &ModelConfig) -> anyhow::Result<Self> {
-        let version = match config.version.as_str() {
-            "v4.1" | "v41" => ModelVersion::DeepseekV41Flash,
-            "v4" => ModelVersion::DeepseekV4Pro,
+        // V2 has no recipe version of its own; requests are converted with
+        // V4 semantics and `check` refuses what V2 cannot do.
+        let (version, v2) = match config.version.as_str() {
+            "v4.1" | "v41" => (ModelVersion::DeepseekV41Flash, false),
+            "v4" => (ModelVersion::DeepseekV4Pro, false),
+            "v2" => (ModelVersion::DeepseekV4Pro, true),
             other => bail!("model {}: unknown version `{other}`", config.name),
         };
         let tokenizer = Tokenizer::from_file(&config.tokenizer)
@@ -61,13 +105,14 @@ impl ServedModel {
             .context("tokenizer has no end-of-sentence token")?;
         let prompt_tokenizer = PromptTokenizer::new(&tokenizer);
         let encoding = match version {
+            _ if v2 => Encoding::V2Chat,
             ModelVersion::DeepseekV4Pro => Encoding::V4(DeepseekV4Encoding::new()),
             _ => Encoding::V41(DeepseekV41Encoding::new()),
         };
         let names = std::iter::once(config.name.clone()).chain(config.aliases.iter().cloned());
         let mut options = ConversionOptions::default()
             .with_model_versions_by_name(names.map(|name| (name, version)));
-        if let Some(thinking) = config.default_thinking {
+        if let Some(thinking) = config.default_thinking.or(v2.then_some(false)) {
             options = options.with_default_thinking_mode(thinking);
         }
         Ok(Self {
@@ -89,7 +134,36 @@ impl ServedModel {
         match &self.encoding {
             Encoding::V4(encoding) => encoding.render_conversation(conversation),
             Encoding::V41(encoding) => encoding.render_conversation(conversation),
+            Encoding::V2Chat => render_v2(conversation),
         }
+    }
+
+    /// Refuse features this model's prompt format cannot express.
+    pub fn check(&self, conversation: &Conversation) -> Result<(), &'static str> {
+        if !matches!(self.encoding, Encoding::V2Chat) {
+            return Ok(());
+        }
+        if conversation.thinking_mode {
+            return Err("thinking mode is not supported by this model");
+        }
+        if !conversation.tools.is_empty() {
+            return Err("tools are not supported by this model");
+        }
+        for message in &conversation.messages {
+            match message {
+                InputMessage::Tool { .. } => {
+                    return Err("tool messages are not supported by this model");
+                }
+                InputMessage::User { image_sources, .. }
+                | InputMessage::System { image_sources, .. }
+                    if !image_sources.is_empty() =>
+                {
+                    return Err("image input is not supported by this model");
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Tokenize a rendered prompt: special ranges become their token IDs,

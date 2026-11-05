@@ -220,6 +220,9 @@ where
     let parsed_at = Instant::now();
     timeline.push(stage("parse", received_at, start, parsed_at));
     let request = parsed.convert(model.options.clone())?;
+    model
+        .check(&request.conversation)
+        .map_err(|message| ApiError::bad_request("unsupported_feature", message))?;
     let converted_at = Instant::now();
     timeline.push(stage("convert", received_at, parsed_at, converted_at));
     let rendered = model.render(&request.conversation);
