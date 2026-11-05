@@ -197,7 +197,10 @@ def test_speculation_is_bit_for_bit_plain_decoding_on_invariant_kernels(tiny_v2)
 def test_the_whole_model_is_batch_invariant(tiny_v2):
     """Per-kernel invariance is not enough: any op outside the kernels (the
     MoE router's GEMM once was one) breaks it. A sequence's logits must be
-    the same bits alone and next to others, in prefill and in decode."""
+    the same bits alone and next to others, in prefill and in decode. On a
+    mismatch, the message names the first op whose rows differ."""
+    import dataclasses
+
     from lev_engine.batch import ForwardBatch
     from lev_engine.config import ModelSpec
     from lev_engine.models.deepseek_v2 import DeepseekV2
@@ -206,21 +209,63 @@ def test_the_whole_model_is_batch_invariant(tiny_v2):
 
     path, _ = tiny_v2
     spec = ModelSpec.from_pretrained(path)
-    model = DeepseekV2(spec, load_state_dict(path, torch.float32, DEVICE), get_ops("triton", True), 128, DEVICE)
+    ops = get_ops("triton", True)
+    trace: list[tuple[str, torch.Tensor]] = []
+
+    def traced(name, fn):
+        def wrapper(*args, **kwargs):
+            out = fn(*args, **kwargs)
+            if name != "write_kv":
+                trace.append((name, out))
+            return out
+
+        return wrapper
+
+    fields = [f.name for f in dataclasses.fields(ops) if callable(getattr(ops, f.name))]
+    ops = dataclasses.replace(ops, **{f: traced(f, getattr(ops, f)) for f in fields})
+    model = DeepseekV2(spec, load_state_dict(path, torch.float32, DEVICE), ops, 128, DEVICE)
+    route = model.route
+    model.route = lambda m, h: [trace.append(("route.ids", r[0])) or trace.append(("route.weights", r[1])) or r
+                                for r in [route(m, h)]][0]  # fmt: skip
     g = torch.Generator().manual_seed(5)
     prompts = [torch.randint(2, 320, (n,), generator=g).tolist() for n in (13, 4, 29, 7)]
 
-    def logits(idx: list[int], decode: bool) -> torch.Tensor:
+    def run(idx: list[int], decode: bool):
         cache = [torch.zeros(model.kv_cache_shape(64, 4), device=DEVICE) for _ in model.layers]
         tables = [list(range(16 * i, 16 * (i + 1))) for i in range(len(idx))]
         ps = [prompts[i] for i in idx]
         out = model.forward(ForwardBatch.build(ps, [0] * len(ps), tables, 4, [True] * len(ps), DEVICE), cache)
+        trace.clear()
         if decode:  # one more token each, its context in the cache
             nxt = [[int(t)] for t in out.argmax(-1).tolist()]
             out = model.forward(ForwardBatch.build(nxt, [len(p) for p in ps], tables, 4, [True] * len(ps), DEVICE), cache)
-        return out
+        return out, list(trace)
 
     for decode in (False, True):
-        crowd = logits([0, 1, 2, 3], decode)
+        trace.clear()
+        crowd, crowd_trace = run([0, 1, 2, 3], decode) if decode else (None, None)
+        if not decode:
+            trace.clear()
+            cache = [torch.zeros(model.kv_cache_shape(64, 4), device=DEVICE) for _ in model.layers]
+            tables = [list(range(16 * i, 16 * (i + 1))) for i in range(4)]
+            crowd = model.forward(ForwardBatch.build(prompts, [0] * 4, tables, 4, [True] * 4, DEVICE), cache)
+            crowd_trace = list(trace)
+        lens = [1] * 4 if decode else [len(p) for p in prompts]
+        starts = [sum(lens[:i]) for i in range(4)]
         for i in range(4):
-            assert torch.equal(logits([i], decode)[0], crowd[i]), (decode, i)
+            if not decode:
+                trace.clear()
+                cache = [torch.zeros(model.kv_cache_shape(64, 4), device=DEVICE) for _ in model.layers]
+                alone = model.forward(ForwardBatch.build([prompts[i]], [0], [list(range(16))], 4, [True], DEVICE), cache)
+                alone_trace = list(trace)
+            else:
+                alone, alone_trace = run([i], True)
+            if torch.equal(alone[0], crowd[i]):
+                continue
+            rows = slice(starts[i], starts[i] + lens[i])
+            for n, ((name, a), (_, c)) in enumerate(zip(alone_trace, crowd_trace, strict=True)):
+                ca = c[rows] if c.shape[0] == sum(lens) else c[i : i + 1]  # token rows, or logits rows
+                if not torch.equal(a, ca):
+                    diff = (a.double() - ca.double()).abs().max().item() if a.is_floating_point() else "ids"
+                    raise AssertionError(f"decode={decode} seq={i}: first difference at op #{n} {name}, max diff {diff}")
+            raise AssertionError(f"decode={decode} seq={i}: logits differ but every traced op agrees")
