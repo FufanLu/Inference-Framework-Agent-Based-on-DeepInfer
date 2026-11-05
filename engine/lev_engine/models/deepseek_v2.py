@@ -24,6 +24,7 @@ import torch
 from ..batch import ForwardBatch
 from ..config import ModelSpec
 from ..ops import Ops
+from ..parallel import Parallel, ep_dispatch_combine
 from ..rope import RotaryCache, softmax_scale
 
 
@@ -70,10 +71,14 @@ class DeepseekV2:
         ops: Ops,
         max_position: int,
         device: torch.device | str = "cpu",
+        parallel: Parallel | None = None,
     ):
         self.spec = spec
         self.ops = ops
         self.device = torch.device(device)
+        self.par = parallel
+        tp = parallel.size if parallel is not None and parallel.tp else 1
+        self.local_heads = spec.num_heads // tp
         w = {k: v.to(self.device) for k, v in weights.items()}
         self.dtype = w["model.embed_tokens.weight"].dtype
         self.embed = w["model.embed_tokens.weight"]
@@ -86,48 +91,73 @@ class DeepseekV2:
     # ------------------------------------------------------------------ weights
 
     def _dense(self, w: dict[str, torch.Tensor], prefix: str) -> _Dense:
-        return _Dense(
-            w13=torch.cat([w[f"{prefix}.gate_proj.weight"], w[f"{prefix}.up_proj.weight"]], dim=0),
-            w2=w[f"{prefix}.down_proj.weight"],
-        )
+        gate, up, down = (w[f"{prefix}.{n}_proj.weight"] for n in ("gate", "up", "down"))
+        if self.par is not None and self.par.tp:  # split the intermediate dimension
+            cols = self.par.shard(gate.shape[0])
+            gate, up, down = gate[cols], up[cols], down[:, cols]
+        return _Dense(w13=torch.cat([gate, up], dim=0).contiguous(), w2=down.contiguous())
 
     def _layer(self, w: dict[str, torch.Tensor], i: int) -> _Layer:
-        s = self.spec
+        s, par = self.spec, self.par
         p = f"model.layers.{i}"
+        tp = par is not None and par.tp
+        heads = par.shard(s.num_heads) if tp else slice(None)
+
+        def by_head(t: torch.Tensor, per_head: int) -> torch.Tensor:
+            """Rows of a [H * per_head, in] projection for this rank's heads."""
+            return t.view(s.num_heads, per_head, -1)[heads].reshape(-1, t.shape[-1]).contiguous()
+
         kv_b = w[f"{p}.self_attn.kv_b_proj.weight"].view(s.num_heads, s.qk_nope_head_dim + s.v_head_dim, s.kv_lora_rank)
+        kv_b = kv_b[heads]
+        o = w[f"{p}.self_attn.o_proj.weight"]
+        o = o.view(o.shape[0], s.num_heads, s.v_head_dim)[:, heads].reshape(o.shape[0], -1).contiguous()
         lora = s.q_lora_rank is not None
         attn = _Attention(
-            q=None if lora else w[f"{p}.self_attn.q_proj.weight"],
+            q=None if lora else by_head(w[f"{p}.self_attn.q_proj.weight"], s.qk_head_dim),
             q_a=w[f"{p}.self_attn.q_a_proj.weight"] if lora else None,
             q_a_norm=w[f"{p}.self_attn.q_a_layernorm.weight"] if lora else None,
-            q_b=w[f"{p}.self_attn.q_b_proj.weight"] if lora else None,
+            q_b=by_head(w[f"{p}.self_attn.q_b_proj.weight"], s.qk_head_dim) if lora else None,
             kv_a=w[f"{p}.self_attn.kv_a_proj_with_mqa.weight"],
             kv_a_norm=w[f"{p}.self_attn.kv_a_layernorm.weight"],
             w_uk=kv_b[:, : s.qk_nope_head_dim].contiguous(),
             w_uv=kv_b[:, s.qk_nope_head_dim :].contiguous(),
-            o=w[f"{p}.self_attn.o_proj.weight"],
+            o=o,
         )
         if s.is_moe_layer(i):
             experts = range(s.n_routed_experts)
+            if par is not None and par.ep:
+                experts = range(s.n_routed_experts)[par.shard(s.n_routed_experts)]
+            routed = [self._expert(w, f"{p}.mlp.experts.{e}") for e in experts]
             mlp: _Dense | _Moe = _Moe(
                 gate=w[f"{p}.mlp.gate.weight"].float(),
-                w13=torch.stack(
-                    [
-                        torch.cat([w[f"{p}.mlp.experts.{e}.gate_proj.weight"], w[f"{p}.mlp.experts.{e}.up_proj.weight"]])
-                        for e in experts
-                    ]
-                ),
-                w2=torch.stack([w[f"{p}.mlp.experts.{e}.down_proj.weight"] for e in experts]),
-                shared=self._dense(w, f"{p}.mlp.shared_experts") if s.n_shared_experts else None,
+                w13=torch.stack([r.w13 for r in routed]),
+                w2=torch.stack([r.w2 for r in routed]),
+                shared=self._shared(w, f"{p}.mlp.shared_experts") if s.n_shared_experts else None,
             )
         else:
-            mlp = self._dense(w, f"{p}.mlp")
+            mlp = self._layer_dense(w, f"{p}.mlp")
         return _Layer(
             input_norm=w[f"{p}.input_layernorm.weight"],
             post_attention_norm=w[f"{p}.post_attention_layernorm.weight"],
             attn=attn,
             mlp=mlp,
         )
+
+    def _expert(self, w: dict[str, torch.Tensor], prefix: str) -> _Dense:
+        """A routed expert: split like a dense MLP under TP, whole under EP."""
+        return self._dense(w, prefix) if self.par is None or self.par.tp else self._whole(w, prefix)
+
+    def _shared(self, w: dict[str, torch.Tensor], prefix: str) -> _Dense:
+        """Shared experts are split under TP, replicated under EP (attention is local)."""
+        return self._expert(w, prefix)
+
+    def _layer_dense(self, w: dict[str, torch.Tensor], prefix: str) -> _Dense:
+        return self._expert(w, prefix)
+
+    @staticmethod
+    def _whole(w: dict[str, torch.Tensor], prefix: str) -> _Dense:
+        gate, up, down = (w[f"{prefix}.{n}_proj.weight"] for n in ("gate", "up", "down"))
+        return _Dense(w13=torch.cat([gate, up], dim=0), w2=down)
 
     def kv_cache_shape(self, num_blocks: int, block_size: int) -> tuple[int, int, int]:
         return (num_blocks, block_size, self.spec.kv_cache_dim)
@@ -141,7 +171,7 @@ class DeepseekV2:
             q = ops.linear(h, a.q)
         else:
             q = ops.linear(ops.rms_norm(ops.linear(h, a.q_a), a.q_a_norm, s.rms_norm_eps), a.q_b)
-        q = q.view(tokens, s.num_heads, s.qk_head_dim)
+        q = q.view(tokens, self.local_heads, s.qk_head_dim)
         q_nope, q_rope = q[..., : s.qk_nope_head_dim], q[..., s.qk_nope_head_dim :]
         kv = ops.linear(h, a.kv_a)
         latent = ops.rms_norm(kv[:, : s.kv_lora_rank], a.kv_a_norm, s.rms_norm_eps)
@@ -151,11 +181,17 @@ class DeepseekV2:
         q_latent = ops.head_matmul(q_nope, a.w_uk, transpose=False)
         out_latent = ops.mla_attention(q_latent, q_rope, cache, batch, self.scale)
         out = ops.head_matmul(out_latent, a.w_uv, transpose=True).reshape(tokens, -1)
-        return ops.linear(out, a.o)
+        out = ops.linear(out, a.o)
+        if self.par is not None and self.par.tp:  # each rank summed over its heads only
+            self.par.all_reduce(out)
+        return out
 
-    def _dense_mlp(self, m: _Dense, h: torch.Tensor) -> torch.Tensor:
+    def _dense_mlp(self, m: _Dense, h: torch.Tensor, reduce: bool = True) -> torch.Tensor:
         ops = self.ops
-        return ops.linear(ops.silu_and_mul(ops.linear(h, m.w13)), m.w2)
+        out = ops.linear(ops.silu_and_mul(ops.linear(h, m.w13)), m.w2)
+        if reduce and self.par is not None and self.par.tp:
+            self.par.all_reduce(out)
+        return out
 
     def route(self, m: _Moe, h: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Top-k experts and their weights (fp32) per token: DeepSeek-V2 softmax routing."""
@@ -175,9 +211,21 @@ class DeepseekV2:
 
     def _moe(self, m: _Moe, h: torch.Tensor) -> torch.Tensor:
         ids, weights = self.route(m, h)
-        out = self.ops.moe_routed(h, ids, weights, m.w13, m.w2)
+        par = self.par
+        if par is not None and par.ep:
+            local = m.w13.shape[0]
+
+            def experts(rows: torch.Tensor, local_ids: torch.Tensor) -> torch.Tensor:
+                ones = torch.ones((rows.shape[0], 1), dtype=torch.float32, device=rows.device)
+                return self.ops.moe_routed(rows, local_ids[:, None], ones, m.w13, m.w2)
+
+            out = ep_dispatch_combine(h, ids, weights, local, experts, par)
+        else:
+            out = self.ops.moe_routed(h, ids, weights, m.w13, m.w2)
         if m.shared is not None:
-            out = out + self._dense_mlp(m.shared, h)
+            out = out + self._dense_mlp(m.shared, h, reduce=False)
+        if par is not None and par.tp:  # routed and shared partial sums, reduced once
+            par.all_reduce(out)
         return out
 
     @torch.inference_mode()

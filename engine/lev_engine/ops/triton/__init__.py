@@ -123,19 +123,27 @@ def gqa_attention(q, cache, batch, scale, num_kv_heads) -> torch.Tensor:
 def align_by_expert(topk_ids: torch.Tensor, num_experts: int, block_m: int):
     """Rows (positions in the flattened [T*k] list) grouped by expert, each
     group padded to a multiple of `block_m` with -1, and the expert of every
-    block of `block_m` rows."""
+    block of `block_m` rows (-1 for unused blocks).
+
+    Sized by the worst case (T*k + E*(block_m-1) rows) and computed with
+    searchsorted, so it never reads a count back to the host: no
+    synchronisation per MoE layer, and capturable in a CUDA graph."""
     flat = topk_ids.reshape(-1)
+    n = flat.numel()
     order = torch.argsort(flat, stable=True)
     counts = torch.bincount(flat, minlength=num_experts)
     padded = (counts + block_m - 1) // block_m * block_m
+    ends_padded = torch.cumsum(padded, 0)
+    starts_padded = ends_padded - padded
     starts_sorted = torch.cumsum(counts, 0) - counts
-    starts_padded = torch.cumsum(padded, 0) - padded
     sorted_experts = flat[order]
-    rank = torch.arange(flat.numel(), device=flat.device) - starts_sorted[sorted_experts]
-    total = int(padded.sum())
-    rows = torch.full((total,), -1, dtype=torch.int64, device=flat.device)
+    rank = torch.arange(n, device=flat.device) - starts_sorted[sorted_experts]
+    capacity = (n + num_experts * (block_m - 1) + block_m - 1) // block_m * block_m
+    rows = torch.full((capacity,), -1, dtype=torch.int64, device=flat.device)
     rows[starts_padded[sorted_experts] + rank] = order
-    block_expert = torch.repeat_interleave(torch.arange(num_experts, device=flat.device), padded // block_m)
+    block_start = torch.arange(0, capacity, block_m, device=flat.device)
+    block_expert = torch.searchsorted(ends_padded, block_start, right=True)
+    block_expert = torch.where(block_expert < num_experts, block_expert, -1)
     return rows, block_expert.to(torch.int32)
 
 

@@ -38,6 +38,7 @@ flowchart TB
     end
     subgraph WK["leviathan-worker (Python · gRPC, token IDs in and out)"]
         V["vllm: DeepSeek-V4.1-Flash on H200"]
+        L["lev: Leviathan's own engine<br/>paged MLA cache · batch-invariant Triton kernels · TP/EP"]
         M["sim: simulated engine (local · CI · demo)"]
         X["deepinfer: adapter (needs SM100, see docs/deepinfer-status.md)"]
     end
@@ -54,6 +55,8 @@ Design points:
 - **One block-hash convention** (header of `proto/leviathan/worker/v1/worker.proto`): a chained xxh3 hash shared by the Rust router and the Python workers, pinned by a cross-language test vector. vLLM's salted block hashes are translated into it inside the worker.
 - **Cache-aware routing is TTFT minimization**: cache hits and load are both converted into estimated time to first token, so the trade-off has a physical unit instead of a tuning weight.
 - **Bursts wait in Kafka, not in the engines.** Batch work goes to `POST /v1/leviathan/jobs`; runners in a Kafka consumer group start a job only while the router's estimated queueing delay stays under a bound, so interactive requests keep their latency and a dead gateway's jobs move to another.
+- **An engine of its own** (`engine/`, `--backend lev`): DeepSeek-V2 (MLA + MoE) and Qwen3 on a paged cache whose block hashes are the router's, continuous batching with chunked prefill, priorities and recompute preemption, and batch-invariant Triton kernels plus counter-based sampling, so a request's tokens do not depend on its batch. Tensor and expert parallelism over NCCL. Checked against transformers in float64.
+- **An RL loop on top** (`rl/`): GRPO with lev-engine rollouts, weight sync into the engine, and the training-inference logprob mismatch measured every step.
 - **Deterministic replay**: every request's token IDs, sampling parameters and seed are in the audit log, so a request can be re-run and diffed token by token.
 
 ## Results so far (sim backend)
@@ -122,7 +125,8 @@ Requirements: Rust ≥ 1.88, Python ≥ 3.10, `protoc`.
 
 | Backend | Runs on | Purpose |
 | --- | --- | --- |
-| `vllm` | Northeastern Explorer cluster, 8× H200 (two TP4 replicas per node) | real model, real benchmarks |
+| `vllm` | Northeastern Explorer cluster, H200 | real engine baseline. DeepSeek-V4.1-Flash (TP4 per replica) does **not** fit Explorer's QoS (at most 2 GPUs per job), so it is measured on models that fit one or two H200s |
+| `lev` | H200 (1-2 GPUs, TP2 / EP2), or CPU for tests | Leviathan's own engine: DeepSeek-V2-Lite, Qwen3 |
 | `sim` | laptop / Docker / CI | development and demos; cost model to be fitted to H200 measurements |
 | `deepinfer` | needs SM100 (B200/GB200) or Ascend 950 | adapter with interface tests; **not run on real hardware**, see [docs/deepinfer-status.md](docs/deepinfer-status.md) |
 
@@ -135,7 +139,10 @@ crates/lev-gateway     multi-protocol gateway (deepseek-recipe), admin API, audi
 crates/lev-router      prefix index, routing policies, PD pairing
 crates/lev-control     tenants, API keys, rate limits, quotas, usage ledger (memory / Postgres / Redis)
 crates/lev-bench       load generator, policy comparison, burst experiment (lev-burst)
-worker/                Python workers: sim / vllm / deepinfer backends
+worker/                Python workers: sim / vllm / lev / deepinfer backends
+engine/                lev-engine: models, paged KV cache, scheduler, sampler, Triton kernels, TP/EP
+rl/                    GRPO loop: lev-engine rollouts, transformers trainer, weight sync
+bench/engine, bench/nccl   engine parity / invariance / throughput / kernel and NCCL collective benchmarks
 apps/console           web console
 assets/tokenizers/v41  DeepSeek V4.1 tokenizer (MIT, from deepseek-recipe; notice kept)
 deploy/                Docker · docker compose · Explorer Slurm scripts
@@ -155,6 +162,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 7. [vLLM on H200](docs/illustrated/07-vllm-on-h200.md)
 8. [Observability and replay](docs/illustrated/08-observability-and-replay.md)
 9. [Bursts, Kafka and admission control](docs/illustrated/09-bursts-and-kafka.md): the burst experiment, the Pareto curve, failover with a killed gateway
+10. [Leviathan's own engine](docs/illustrated/10-lev-engine.md): the MLA latent cache, chunked prefill and preemption traced step by step, batch invariance
 
 ## Roadmap
 
@@ -172,11 +180,18 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [ ] OpenTelemetry export
 - [x] P5 console and agent studio (Live Datasheet design, English + 中文)
 - [ ] P6 benchmarks on H200: four policies vs `vllm-router`, Pareto curves
+- [ ] P7 lev-engine
+  - [x] DeepSeek-V2 (absorbed MLA, DeepSeekMoE) and Qwen3; paged cache, prefix cache in the router's hashes, chunked prefill, priorities, preemption; worker backend; DeepSeek-V2 chat template in the gateway
+  - [x] batch-invariant Triton kernels (GEMM, MLA and GQA attention, grouped MoE, RMSNorm) and seeded Gumbel-max sampling
+  - [x] tensor and expert parallelism (TP2 / EP2 with DP attention), checked against one process
+  - [ ] H200 measurements: parity with transformers, invariance, kernels, throughput vs vLLM, TP2 / EP2, NCCL tuning (jobs written, queued)
+  - [ ] CUDA graphs and overlapped scheduling
+- [ ] P8 RL: GRPO loop with weight sync and mismatch metrics (CPU-tested), H200 run pending
 
 ## Development
 
 ```sh
-make check        # cargo test + pytest
+make check        # cargo test + pytest (worker, engine, rl)
 make lint         # clippy -D warnings
 make proto-py     # generate the Python gRPC stubs
 ```

@@ -38,6 +38,7 @@ flowchart TB
     end
     subgraph WK["leviathan-worker (Python · gRPC，token 进 token 出)"]
         V["vllm：H200 上的 DeepSeek-V4.1-Flash"]
+        L["lev：Leviathan 自研引擎<br/>分页 MLA cache · batch-invariant Triton 算子 · TP/EP"]
         M["sim：模拟引擎（本地 · CI · 演示）"]
         X["deepinfer：适配器（需 SM100，见 docs/deepinfer-status.md）"]
     end
@@ -54,6 +55,8 @@ flowchart TB
 - **统一的块哈希约定**（见 `proto/leviathan/worker/v1/worker.proto` 文件头）：Rust 路由器和 Python worker 用同一个 xxh3 链式哈希，跨语言测试向量保证两边一致。vLLM 带盐的块哈希在 worker 内翻译成这套约定。
 - **cache-aware 路由就是最小化预计 TTFT**：缓存命中和负载都换算成“预计首 token 时间”，取舍有物理单位，不靠调权重。
 - **突发流量在 Kafka 里排队，而不是堆在引擎里。** 批量任务走 `POST /v1/leviathan/jobs`；Kafka 消费者组里的执行器只在路由器估计的排队时延低于上限时才启动作业，交互请求的延迟因此不受影响，某个网关挂掉后它的作业会转给其他网关。
+- **自研推理引擎**（`engine/`，`--backend lev`）：支持 DeepSeek-V2（MLA + MoE）和 Qwen3。分页 KV cache 的块哈希与路由器一致；连续批处理带分块 prefill、优先级和重算式抢占；Triton 算子和基于计数器哈希的采样都是 batch-invariant 的，请求的输出不随同批的其他请求变化。通过 NCCL 支持张量并行和专家并行。数值在 float64 下与 transformers 对齐。
+- **在它之上的 RL 闭环**（`rl/`）：GRPO，rollout 用 lev-engine，权重同步回引擎，每一步都测量训练与推理之间的 logprob 差异。
 - **确定性重放**：每个请求的 token ID、采样参数和 seed 都进审计日志，可以原样重跑，并逐 token 对比两次输出。
 
 ## 目前的结果（sim 后端）
@@ -122,7 +125,8 @@ curl -s localhost:8080/v1/leviathan/jobs/<id>      # queued → running → succ
 
 | 后端 | 运行位置 | 用途 |
 | --- | --- | --- |
-| `vllm` | Northeastern Explorer 集群 8× H200（每节点两个 TP4 副本） | 真实模型、真实 benchmark |
+| `vllm` | Northeastern Explorer 集群 H200 | 真实引擎基线。DeepSeek-V4.1-Flash（每副本 TP4）**不符合** Explorer 的 QoS（每作业最多 2 张卡），因此用 1–2 张 H200 放得下的模型测量 |
+| `lev` | H200（1–2 张卡，TP2 / EP2），测试时用 CPU | Leviathan 自研引擎：DeepSeek-V2-Lite、Qwen3 |
 | `sim` | 笔记本 / Docker / CI | 开发与演示；耗时模型待用 H200 实测拟合 |
 | `deepinfer` | 需要 SM100（B200/GB200）或昇腾 950 | 适配器 + 接口测试；**未在真实硬件上运行**，见 [docs/deepinfer-status.md](docs/deepinfer-status.md) |
 
@@ -135,7 +139,10 @@ crates/lev-gateway     多协议网关（deepseek-recipe）、管理 API、审�
 crates/lev-router      前缀索引、路由策略、PD 配对
 crates/lev-control     租户、API key、限流、配额、用量账本（内存 / Postgres / Redis）
 crates/lev-bench       压测器、策略对比、突发实验（lev-burst）
-worker/                Python worker：sim / vllm / deepinfer 后端
+worker/                Python worker：sim / vllm / lev / deepinfer 后端
+engine/                lev-engine：模型、分页 KV cache、调度器、采样器、Triton 算子、TP/EP
+rl/                    GRPO 闭环：lev-engine rollout、transformers 训练端、权重同步
+bench/engine, bench/nccl   引擎数值对齐 / invariance / 吞吐 / 算子与 NCCL 集合通信 benchmark
 apps/console           Web 控制台
 assets/tokenizers/v41  DeepSeek V4.1 tokenizer（MIT，来自 deepseek-recipe，保留原许可声明）
 deploy/                Docker · docker compose · Explorer Slurm 脚本
@@ -155,6 +162,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
 7. [H200 上的 vLLM](docs/illustrated/07-vllm-on-h200.md)
 8. [可观测性与重放](docs/illustrated/08-observability-and-replay.md)
 9. [突发流量、Kafka 与准入控制](docs/illustrated/09-bursts-and-kafka.md)：突发实验、Pareto 曲线、杀掉一个网关后的故障转移
+10. [Leviathan 自研引擎](docs/illustrated/10-lev-engine.md)：MLA 潜在向量 cache、逐步追踪分块 prefill 与抢占、batch invariance
 
 ## 路线图
 
@@ -172,11 +180,18 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
   - [ ] OpenTelemetry 导出
 - [x] P5 控制台与 agent studio（“实时规格书”设计，英文 + 中文）
 - [ ] P6 H200 benchmark：4 种策略对比 `vllm-router`，Pareto 曲线
+- [ ] P7 lev-engine
+  - [x] DeepSeek-V2（吸收式 MLA、DeepSeekMoE）与 Qwen3；分页 cache、使用路由器哈希的前缀缓存、分块 prefill、优先级、抢占；worker 后端；网关支持 DeepSeek-V2 对话模板
+  - [x] batch-invariant Triton 算子（GEMM、MLA 与 GQA 注意力、分组 MoE、RMSNorm）与带 seed 的 Gumbel-max 采样
+  - [x] 张量并行与专家并行（TP2 / EP2 + DP 注意力），已与单进程结果对齐
+  - [ ] H200 实测：与 transformers 数值对齐、invariance、算子、对比 vLLM 的吞吐、TP2 / EP2、NCCL 调优（作业已写好、排队中）
+  - [ ] CUDA Graph 与重叠调度
+- [ ] P8 RL：GRPO 闭环（含权重同步与训推差异指标，已在 CPU 上测试），H200 运行待做
 
 ## 开发
 
 ```sh
-make check        # cargo test + pytest
+make check        # cargo test + pytest（worker、engine、rl）
 make lint         # clippy -D warnings
 make proto-py     # 生成 Python gRPC 代码
 ```

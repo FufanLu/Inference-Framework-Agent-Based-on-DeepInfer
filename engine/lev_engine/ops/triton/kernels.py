@@ -141,6 +141,8 @@ def moe_gemm_kernel(
     pid_m = tl.program_id(0)
     pid_n = tl.program_id(1)
     expert = tl.load(block_expert_ptr + pid_m).to(tl.int64)
+    if expert < 0:  # past the last expert's rows (worst-case sizing)
+        return
     idx = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     dst = tl.load(rows_ptr + idx, mask=idx < num_valid, other=-1)
     src = tl.load(src_rows_ptr + idx, mask=idx < num_valid, other=-1)

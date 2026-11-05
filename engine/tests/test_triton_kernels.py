@@ -120,6 +120,21 @@ def test_gqa_attention_matches_reference_and_is_batch_invariant():
     assert torch.equal(tops.gqa_attention(q[11:12], cache, alone, 0.25, Hkv)[0], got[11])
 
 
+def test_align_by_expert_is_complete_and_homogeneous():
+    ids = torch.tensor([[3, 0], [3, 1], [0, 3], [7, 3]], device=DEVICE)
+    rows, block_expert = tops.align_by_expert(ids, 8, 4)
+    live = rows[rows >= 0].tolist()
+    assert sorted(live) == list(range(8))  # every (token, slot) pair exactly once
+    flat = ids.reshape(-1).tolist()
+    for b, e in enumerate(block_expert.tolist()):
+        block = rows[b * 4 : (b + 1) * 4].tolist()
+        if e < 0:
+            assert all(r == -1 for r in block)
+        else:
+            assert all(flat[r] == e for r in block if r >= 0)
+    assert block_expert.tolist().count(-1) == len(block_expert) - 4  # experts 0, 1, 3, 7
+
+
 def test_moe_matches_reference():
     T, k, E, hidden, inter = 23, 3, 8, 64, 24
     x = rand(T, hidden)
