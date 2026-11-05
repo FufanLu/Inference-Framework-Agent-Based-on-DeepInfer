@@ -16,12 +16,25 @@ every kernel here fixes its reduction order independently of how many rows
 
 The cost of this (fixed tiles waste work at small M, no split-K or split-KV
 parallelism for small batches) is measured in docs/illustrated.
+
+Within a tile, a row's dot product must not depend on the row's position
+either. Tensor cores compute every element the same way; the Triton
+interpreter does not use them: its tl.dot is numpy's matmul on the host
+BLAS, which on some CPUs (an AMD EPYC 9V74 CI runner) gives a row other bits
+in another position of the tile. Under TRITON_INTERPRET=1, `_dot` is an
+explicit product summed over K in order instead (numpy sums a non-innermost
+axis sequentially), so the CPU tests check the kernels' indexing and
+reduction order, not the host BLAS.
 """
 
 from __future__ import annotations
 
+import os
+
 import triton
 import triton.language as tl
+
+_INTERPRET = tl.constexpr(os.environ.get("TRITON_INTERPRET") == "1")
 
 
 @triton.jit
@@ -54,8 +67,10 @@ def silu_and_mul_kernel(x_ptr, out_ptr, n_cols, stride_x, stride_out, BLOCK: tl.
 @triton.jit
 def _dot(a, b, IEEE: tl.constexpr):
     """tl.dot; IEEE multiplies fp32 inputs in full fp32 (the default is TF32
-    on tensor-core GPUs), as torch's fp32 matmul does."""
-    if IEEE:
+    on tensor-core GPUs), as torch's fp32 matmul does. fp32 accumulation."""
+    if _INTERPRET:  # see the module docstring
+        return tl.sum(a.to(tl.float32)[:, :, None] * b.to(tl.float32)[None, :, :], axis=1)
+    elif IEEE:
         return tl.dot(a, b, input_precision="ieee")
     else:
         return tl.dot(a, b)
