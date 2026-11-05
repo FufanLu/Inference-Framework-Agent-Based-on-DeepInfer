@@ -1051,9 +1051,12 @@ async fn send_as(
     )
 }
 
-/// Poll a job until it finishes.
+/// Poll a job until it finishes. The deadline is generous: over Kafka the
+/// consumer group's first rebalance alone takes ~3 s (the broker's
+/// `group.initial.rebalance.delay.ms`), more on a loaded CI runner.
 async fn wait_job(app: &axum::Router, id: &str, key: Option<&str>) -> Value {
-    for _ in 0..500 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
         let (status, job) =
             send_as(app, "GET", &format!("/v1/leviathan/jobs/{id}"), key, None).await;
         assert_eq!(status, StatusCode::OK, "{job}");

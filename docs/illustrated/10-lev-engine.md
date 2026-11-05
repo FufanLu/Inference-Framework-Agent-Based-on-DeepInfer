@@ -101,6 +101,7 @@ The replay of [08](08-observability-and-replay.md) is exact on the sim and only 
 | Prefill and decode use different math | MLA expand vs absorb | absorbed path for both |
 | MoE output depends on which tokens share an expert | grouped GEMM with atomics | sorted-by-expert grouped GEMM, no atomics; top-k outputs summed in a fixed order |
 | Norms reduce across a tile of rows | some fused kernels | one program per row |
+| An op outside the kernels | the MoE router's fp32 GEMM was a bare matmul (BLAS / cuBLAS) | goes through `ops.linear` like every other GEMM; `test_the_whole_model_is_batch_invariant` checks the model, not just the kernels (found while chasing a CI-only failure of chapter 11's bit-for-bit test) |
 | Sampling noise from a shared RNG stream | `torch.multinomial` | noise is a hash of (seed, output index, vocab id); Gumbel-max sampling |
 
 The sampler draws exactly from softmax(logits / T) without a stateful generator:
