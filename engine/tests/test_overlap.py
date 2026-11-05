@@ -40,8 +40,10 @@ def test_overlap_matches_sequential(tiny_v2, num_blocks):
         assert b[0][rid][0] == tokens and b[0][rid][2] == reason
         # Preemption timing differs by a step (blocks are freed when a stop is
         # read back), so recomputed prefixes may run in other batches; the
-        # reference kernels are not batch-invariant: 1e-11 drift, same tokens.
-        assert b[0][rid][1] == pytest.approx(logprobs, abs=1e-9)
+        # reference kernels are not batch-invariant, and the MoE router's GEMM
+        # runs in fp32 (as in HF), its CPU reduction order following the
+        # batch shape: up to ~2e-9 drift in CI, same tokens.
+        assert b[0][rid][1] == pytest.approx(logprobs, abs=1e-7)
     assert all(t >= 0 for out, _, _ in b[0].values() for t in out)  # no placeholder left
     # Overlap computes the KV of a finished request's last token (its extra
     # step), which can complete one more cacheable block; never fewer.
