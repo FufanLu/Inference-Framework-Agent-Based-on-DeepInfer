@@ -131,7 +131,9 @@ def align_by_expert(topk_ids: torch.Tensor, num_experts: int, block_m: int):
     flat = topk_ids.reshape(-1)
     n = flat.numel()
     order = torch.argsort(flat, stable=True)
-    counts = torch.bincount(flat, minlength=num_experts)
+    # Not torch.bincount: on CUDA it reads the maximum back to size its output.
+    counts = torch.zeros(num_experts, dtype=torch.int64, device=flat.device)
+    counts.scatter_add_(0, flat, torch.ones_like(flat))
     padded = (counts + block_m - 1) // block_m * block_m
     ends_padded = torch.cumsum(padded, 0)
     starts_padded = ends_padded - padded

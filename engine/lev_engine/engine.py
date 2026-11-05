@@ -61,9 +61,21 @@ class LLMEngine:
         weights = load_state_dict(model_path, dtype, self.device)
         self.model = model_class(self.spec)(self.spec, weights, get_ops(config.kernel_backend, config.batch_invariant), config.max_model_len, self.device)
         num_blocks = config.num_blocks or self._blocks_for_memory(dtype)
-        self.pool = BlockPool(num_blocks, config.block_size, config.enable_prefix_caching)
+        graphs = config.cuda_graph and self.device.type == "cuda" and config.kernel_backend == "triton"
+        if config.cuda_graph and not graphs:
+            raise ValueError("cuda_graph needs device=cuda and kernel_backend=triton")
+        # With graphs, the last block is scratch space for padding rows.
+        self.pool = BlockPool(num_blocks - int(graphs), config.block_size, config.enable_prefix_caching)
         shape = self.model.kv_cache_shape(num_blocks, config.block_size)
         self.kv_caches = [torch.zeros(shape, dtype=dtype, device=self.device) for _ in range(self.spec.num_layers)]
+        self.graphs = None
+        if graphs:
+            from .cuda_graph import DecodeGraphs
+
+            max_blocks = (config.max_model_len + config.block_size - 1) // config.block_size
+            self.graphs = DecodeGraphs(
+                self.model, self.kv_caches, config.block_size, max_blocks, num_blocks - 1, config.cuda_graph_max_batch
+            )
         self.scheduler = Scheduler(config, self.pool)
         self.requests: dict[str, Sequence] = {}
         self.stats = EngineStats()
@@ -150,7 +162,10 @@ class LLMEngine:
             self.device,
         )
         t1 = time.perf_counter()
-        logits = self.model.forward(batch, self.kv_caches)
+        if self.graphs is not None and self.graphs.can_run(batch):
+            logits = self.graphs.run(batch)
+        else:
+            logits = self.model.forward(batch, self.kv_caches)
         samplers = [s.seq for s in plan.scheduled if s.completes_prompt]
         result = sample(logits, [q.params for q in samplers], [len(q.output) for q in samplers]) if samplers else None
         t2 = time.perf_counter()

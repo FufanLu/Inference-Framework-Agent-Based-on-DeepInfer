@@ -190,6 +190,9 @@ class EngineConfig:
     #: Batch-invariant numerics: a request's tokens do not depend on what else
     #: is in the batch (fixed reduction orders, no batch-size-dependent tiling).
     batch_invariant: bool = False
+    #: Replay decode steps from CUDA graphs (Triton backend on CUDA only).
+    cuda_graph: bool = False
+    cuda_graph_max_batch: int = 256
     device: str = "cpu"
     dtype: str = "float32"
     extra: dict[str, Any] = field(default_factory=dict)

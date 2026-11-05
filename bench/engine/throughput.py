@@ -29,6 +29,8 @@ def run_lev(args, kernels: str):
     from lev_engine.engine import LLMEngine
     from lev_engine.sequence import SamplingParams
 
+    graphs = kernels.endswith("+graph")
+    kernels = kernels.removesuffix("+graph")
     backend, invariant = {"reference": ("reference", False), "triton": ("triton", False),
                           "triton-invariant": ("triton", True)}[kernels]  # fmt: skip
     engine = LLMEngine(
@@ -36,6 +38,7 @@ def run_lev(args, kernels: str):
         EngineConfig(
             device=DEVICE, dtype="bfloat16", block_size=16, max_num_batched_tokens=8192, max_num_seqs=256,
             max_model_len=4096, kv_cache_memory_bytes=40 << 30, kernel_backend=backend, batch_invariant=invariant,
+            cuda_graph=graphs,
         ),  # fmt: skip
     )
     out = {}
@@ -103,7 +106,8 @@ def run_vllm(args):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--engine", required=True, help="vllm | lev:reference | lev:triton | lev:triton-invariant")
+    ap.add_argument("--engine", required=True,
+                    help="vllm | lev:reference | lev:triton | lev:triton-invariant, with +graph for CUDA graphs")  # fmt: skip
     ap.add_argument("--model", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
