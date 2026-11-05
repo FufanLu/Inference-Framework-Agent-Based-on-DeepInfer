@@ -299,8 +299,12 @@ fn generate_request(
             seed,
             logprobs: options.logprobs,
             top_logprobs: options.top_logprobs.map(u32::from).unwrap_or(0),
-            stop_token_ids: vec![model.eos_token_id],
-            ignore_eos: false,
+            stop_token_ids: if model.ignore_eos {
+                Vec::new()
+            } else {
+                vec![model.eos_token_id]
+            },
+            ignore_eos: model.ignore_eos,
         }),
         constraint: options.output_constraint.as_ref().map(constraint),
         stage: pb::Role::Unified as i32,

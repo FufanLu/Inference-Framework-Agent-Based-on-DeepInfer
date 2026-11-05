@@ -54,6 +54,11 @@ pub struct ModelConfig {
     /// Thinking mode for requests that do not choose one.
     #[serde(default)]
     pub default_thinking: Option<bool>,
+    /// Benchmarks only: decode exactly `max_tokens` tokens, ignoring the
+    /// end-of-sentence token, so that every policy sees the same output
+    /// lengths. Responses stop with `length`.
+    #[serde(default)]
+    pub ignore_eos: bool,
 }
 
 fn default_version() -> String {
@@ -76,6 +81,7 @@ fn default_models() -> Vec<ModelConfig> {
         tokenizer: PathBuf::from("assets/tokenizers/v41/tokenizer.json"),
         context_limit: default_context_limit(),
         default_thinking: None,
+        ignore_eos: false,
     }]
 }
 

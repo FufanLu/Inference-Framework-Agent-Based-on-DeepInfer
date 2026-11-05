@@ -75,7 +75,16 @@ impl MockWorker {
             }
         }
         let seed = request.sampling.as_ref().map_or(0, |s| s.seed);
-        let answer = format!("Hello from {} (seed {seed}).", self.id);
+        let mut answer = format!("Hello from {} (seed {seed}).", self.id);
+        if let Some(s) = &request.sampling
+            && s.ignore_eos
+        {
+            // Shows the test that the gateway asked for fixed-length decoding.
+            answer.push_str(&format!(
+                " [ignore_eos, {} stop ids]",
+                s.stop_token_ids.len()
+            ));
+        }
         if thinking {
             format!("The user greets me.</think>{answer}")
         } else {
@@ -511,6 +520,21 @@ async fn max_tokens_truncates_with_length() {
     let body: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(body["choices"][0]["finish_reason"], "length");
     assert_eq!(body["usage"]["completion_tokens"], 2);
+}
+
+#[tokio::test]
+async fn benchmark_models_decode_past_eos() {
+    let cluster = cluster(&one_worker(), |config| config.models[0].ignore_eos = true).await;
+    let (status, body) = post(
+        &cluster.app,
+        "/v1/chat/completions",
+        json!({"model": MODEL, "messages": [{"role": "user", "content": "Hi"}], "thinking": {"type": "disabled"}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    let content = body["choices"][0]["message"]["content"].as_str().unwrap();
+    assert!(content.ends_with("[ignore_eos, 0 stop ids]"), "{content}");
 }
 
 #[tokio::test]

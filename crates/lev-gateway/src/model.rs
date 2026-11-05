@@ -28,6 +28,8 @@ pub struct ServedModel {
     /// Shared by every request's stream processor.
     pub tokenizer: Arc<Tokenizer>,
     pub eos_token_id: u32,
+    /// Decode to `max_tokens` regardless of EOS (benchmark deployments).
+    pub ignore_eos: bool,
     /// Conversion options that accept this model's names.
     pub options: ConversionOptions,
     prompt_tokenizer: PromptTokenizer,
@@ -75,6 +77,7 @@ impl ServedModel {
             context_limit: config.context_limit,
             tokenizer: Arc::new(tokenizer),
             eos_token_id,
+            ignore_eos: config.ignore_eos,
             options,
             prompt_tokenizer,
             encoding,

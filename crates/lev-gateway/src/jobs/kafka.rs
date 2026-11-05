@@ -23,7 +23,7 @@ use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, Rebalance, StreamConsumer,
 };
-use rdkafka::error::RDKafkaErrorCode;
+use rdkafka::error::{KafkaError, RDKafkaErrorCode};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::json;
@@ -252,7 +252,18 @@ impl JobQueue for KafkaQueue {
             .as_ref()
             .context("this gateway does not run jobs (jobs.run = false)")?;
         loop {
-            let message = consumer.recv().await?;
+            let message = match consumer.recv().await {
+                Ok(message) => message,
+                // Partition-level consumer errors are not fatal in librdkafka:
+                // e.g. UnknownTopicOrPartition while a just-created topic's
+                // metadata reaches every broker. The consumer recovers.
+                Err(KafkaError::MessageConsumption(code)) => {
+                    tracing::debug!(%code, "transient job consumer error");
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             let (partition, offset) = (message.partition(), message.offset());
             let Some(job) = message
                 .payload()

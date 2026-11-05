@@ -156,7 +156,7 @@ class KvEventTranslator:
 
 def stop_set(request: GenerateRequest, eos_token_id: int | None) -> set[int]:
     stops = set(request.sampling.stop_token_ids)
-    if eos_token_id is not None:
+    if eos_token_id is not None and not request.sampling.ignore_eos:
         stops.add(eos_token_id)
     return stops
 
