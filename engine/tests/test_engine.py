@@ -74,6 +74,19 @@ def test_prefix_cache_hits_and_events_follow_the_router_convention(tiny_v2):
     assert cached == (len(shared) + 2 - 1) // 4 * 4
 
 
+def test_blocks_after_a_prefix_hit_are_cached_too(tiny_v2):
+    """A request that extends a cached prefix registers (and announces) the
+    blocks that follow the hit; the router learns the longer prefix."""
+    path, _ = tiny_v2
+    eng = engine(path)
+    shared = prompts(1, seed=7)[0] * 3
+    eng.generate([shared], GREEDY)
+    longer = shared + torch.randint(2, 320, (40,), generator=torch.Generator().manual_seed(1)).tolist()
+    eng.generate([longer], GREEDY)
+    stored = {h for e in eng.drain_events() if isinstance(e, BlockStored) for h in e.block_hashes}
+    assert set(block_hashes(longer, 4)) <= stored
+
+
 def test_eviction_emits_block_removed(tiny_v2):
     path, _ = tiny_v2
     eng = engine(path, num_blocks=12)

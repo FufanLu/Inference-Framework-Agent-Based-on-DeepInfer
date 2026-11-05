@@ -132,7 +132,8 @@ class Scheduler:
                 # Keep at least one token to compute: its logits are needed.
                 hit = self.pool.match(seq.block_hashes(bs, seq.num_tokens - 1))
                 seq.block_ids = hit
-                seq.num_computed = seq.num_registered = len(hit) * bs
+                seq.num_registered = len(hit)  # blocks, not tokens
+                seq.num_computed = len(hit) * bs
             n = min(seq.num_tokens - seq.num_computed, budget)
             need = self._blocks_needed(seq, seq.num_computed + n)
             if need > self.pool.num_free:
