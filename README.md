@@ -185,7 +185,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] DeepSeek-V2 (absorbed MLA, DeepSeekMoE) and Qwen3; paged cache, prefix cache in the router's hashes, chunked prefill, priorities, preemption; worker backend; DeepSeek-V2 chat template in the gateway
   - [x] batch-invariant Triton kernels (GEMM, MLA and GQA attention, grouped MoE, RMSNorm) and seeded Gumbel-max sampling
   - [x] tensor and expert parallelism (TP2 / EP2 with DP attention), checked against one process
-  - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 run written (`spec_h200.sbatch`), not yet queued
+  - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 run (`spec_h200.sbatch`) queued fourth, after the 2-node job
   - [ ] H200 measurements: parity with transformers, invariance, kernels, throughput vs vLLM, TP2 / EP2, NCCL tuning (jobs written, queued)
   - [ ] CUDA graphs and overlapped scheduling
 - [ ] P8 RL: GRPO loop with weight sync and mismatch metrics (CPU-tested), H200 run pending

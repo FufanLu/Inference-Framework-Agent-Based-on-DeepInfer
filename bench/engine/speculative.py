@@ -166,6 +166,13 @@ def main() -> None:
         modes += [("draft", "draft", True), ("draft-greedy", "draft", False)]
 
     rows, reference = [], {}
+
+    def save() -> None:
+        write(args.out, {"model": args.model, "draft": args.draft, "k": args.k, "kernels": args.kernels,
+                         "graphs": args.graphs, "max_tokens": args.max_tokens,
+                         "prompt_tokens": {w: [len(p) for p in ps] for w, ps in workloads.items()},
+                         "results": rows})  # fmt: skip
+
     for invariant in (False, True):
         batches = args.batches if not invariant else [b for b in args.invariant_batches if b <= n]
         if not batches:
@@ -194,8 +201,7 @@ def main() -> None:
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-    write(args.out, {"model": args.model, "draft": args.draft, "k": args.k, "kernels": args.kernels,
-                     "graphs": args.graphs, "max_tokens": args.max_tokens, "results": rows})  # fmt: skip
+            save()  # after every engine, so a timeout keeps what has run
 
 
 if __name__ == "__main__":

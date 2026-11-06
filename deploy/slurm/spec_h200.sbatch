@@ -37,8 +37,8 @@ step() {
     tail -2 "$OUT/$name.log"
 }
 
-step gpu-tests 900 env PYTHONPATH=worker python -m pytest -q engine/tests/test_speculative.py \
-    engine/tests/test_cuda_graph.py engine/tests/test_triton_kernels.py
+step gpu-tests 900 bash -c "cd engine && PYTHONPATH=../worker python -m pytest -q -p no:cacheprovider -rs \
+    tests/test_speculative.py tests/test_cuda_graph.py tests/test_triton_kernels.py"
 step spec-v2lite 2400 python bench/engine/speculative.py --model "$V2" --template v2 --out "$OUT/spec-v2lite.json"
 step spec-qwen3 4200 python bench/engine/speculative.py --model "$Q8" --draft "$Q06" --template qwen3 \
     --out "$OUT/spec-qwen3.json"
