@@ -17,6 +17,7 @@
 #   sbatch deploy/slurm/engine_h200.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
+lev_gpu_preflight
 set +e  # run every step; each one records its own exit code
 export PYTHONNOUSERSITE=1
 MODEL="${V2_MODEL_DIR:-$HF_HOME/models/DeepSeek-V2-Lite-Chat}"

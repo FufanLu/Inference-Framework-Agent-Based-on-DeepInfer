@@ -14,6 +14,7 @@
 #   sbatch deploy/slurm/rl_h200.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
+lev_gpu_preflight
 set +e
 export PYTHONNOUSERSITE=1 HF_HUB_ENABLE_HF_TRANSFER=1
 QWEN="${QWEN_MODEL_DIR:-$HF_HOME/models/Qwen3-1.7B}"

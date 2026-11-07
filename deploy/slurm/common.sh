@@ -17,6 +17,17 @@ lev_activate() {
     conda activate "$LEV_ENV"
 }
 
+# Exit the job at once if this node's GPU is unusable from the env (on every
+# node of a multi-node job when called with "all").
+lev_gpu_preflight() {
+    local cmd=(python "$LEV_ROOT/deploy/slurm/preflight_gpu.py")
+    if [[ "${1:-}" == all ]]; then cmd=(srun --ntasks-per-node=1 "${cmd[@]}"); fi
+    if ! "${cmd[@]}"; then
+        echo "GPU preflight failed; stopping before the real steps" >&2
+        exit 1
+    fi
+}
+
 # vLLM engine arguments for DeepSeek-V4.1-Flash on 4x H200 (from the vLLM
 # recipe at recipes.vllm.ai, H200 / single-node TP / text-only), minus the
 # OpenAI-server-only flags (tool parser, auto tool choice): the worker gets
