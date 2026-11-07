@@ -10,6 +10,8 @@
 # Two H200s on one node (NVLink): NCCL collectives and their tuning knobs,
 # then DeepSeek-V2-Lite on one GPU vs TP2 vs EP2 (DP attention) vs AFD.
 #   sbatch deploy/slurm/engine_2gpu.sbatch
+# Rerun some steps only (comma-separated names; build is needed for serve-bench):
+#   sbatch --export=ALL,LEV_STEPS=build,afd,serve-bench deploy/slurm/engine_2gpu.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
 lev_gpu_preflight
@@ -27,9 +29,11 @@ mkdir -p "$OUT" logs
 } > "$OUT/topology.txt" 2>&1
 cat "$OUT/topology.txt"
 
+wanted() { [[ -z "${LEV_STEPS:-}" || ",$LEV_STEPS," == *",$1,"* ]]; }
 step() {
     local name="$1" limit="$2"
     shift 2
+    wanted "$name" || return 0
     echo "== $name  $(date +%T)"
     timeout "$limit" "$@" > "$OUT/$name.log" 2>&1
     local rc=$?
@@ -81,20 +85,22 @@ endpoint = "http://127.0.0.1:51061"
 endpoint = "http://127.0.0.1:51062"
 TOML
 LEV_CFG='{"device":"cuda","dtype":"bfloat16","kernel_backend":"triton","block_size":16,"kv_cache_memory_bytes":60000000000,"max_model_len":8192,"max_num_batched_tokens":8192,"max_num_seqs":128}'
-for i in 0 1; do
-    (cd worker && CUDA_VISIBLE_DEVICES=$i PYTHONPATH=.:../engine python -m leviathan_worker.server --backend lev \
-        --lev-model "$MODEL" --lev-config "$LEV_CFG" --model DeepSeek-V2-Lite-Chat --host 127.0.0.1 \
-        --port $((51061 + i)) --worker-id "lev-$i" --log-format text) > "$OUT/worker-$i.log" 2>&1 &
-done
-target/release/lev-gateway --config "$OUT/gateway.toml" > "$OUT/gateway.log" 2>&1 &
-trap 'kill $(jobs -p) 2>/dev/null' EXIT
-if lev_wait_ready 2 900; then
-    step serve-bench 1800 target/release/lev-bench --gateway http://127.0.0.1:8080 --model v2-lite \
-        --workload agent-shared-prefix --requests 400 --concurrency 32 --max-tokens 64 \
-        --policies round_robin,least_load,p2c,cache_aware --tag h200-lev-v2lite --out "$OUT/serve-bench"
-    curl -s http://127.0.0.1:8080/metrics > "$OUT/metrics.prom"
-else
-    echo "serve: workers not ready" | tee -a "$OUT/steps.txt"
+if wanted serve-bench; then
+    for i in 0 1; do
+        (cd worker && CUDA_VISIBLE_DEVICES=$i PYTHONPATH=.:../engine python -m leviathan_worker.server --backend lev \
+            --lev-model "$MODEL" --lev-config "$LEV_CFG" --model DeepSeek-V2-Lite-Chat --host 127.0.0.1 \
+            --port $((51061 + i)) --worker-id "lev-$i" --log-format text) > "$OUT/worker-$i.log" 2>&1 &
+    done
+    target/release/lev-gateway --config "$OUT/gateway.toml" > "$OUT/gateway.log" 2>&1 &
+    trap 'kill $(jobs -p) 2>/dev/null' EXIT
+    if lev_wait_ready 2 900; then
+        step serve-bench 1800 target/release/lev-bench --gateway http://127.0.0.1:8080 --model v2-lite \
+            --workload agent-shared-prefix --requests 400 --concurrency 32 --max-tokens 64 \
+            --policies round_robin,least_load,p2c,cache_aware --tag h200-lev-v2lite --out "$OUT/serve-bench"
+        curl -s http://127.0.0.1:8080/metrics > "$OUT/metrics.prom"
+    else
+        echo "serve: workers not ready" | tee -a "$OUT/steps.txt"
+    fi
 fi
 echo "done $(date +%T)"
 cat "$OUT/steps.txt"

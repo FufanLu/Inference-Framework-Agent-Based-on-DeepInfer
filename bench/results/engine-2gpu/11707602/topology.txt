@@ -1,0 +1,42 @@
+d4055
+name, memory.total [MiB], driver_version
+NVIDIA H200, 143771 MiB, 570.86.15
+NVIDIA H200, 143771 MiB, 570.86.15
+	[4mGPU0	GPU1	NIC0	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV18	NODE	17,19,21,23	1		N/A
+GPU1	NV18	 X 	NODE	17,19,21,23	1		N/A
+NIC0	NODE	NODE	 X 				
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+
+NIC Legend:
+
+  NIC0: mlx5_0
+
+GPU 0: NVIDIA H200 (UUID: GPU-1b5c1c51-19fe-e219-5f29-59a700ceed46)
+	 Link 0: 26.562 GB/s
+	 Link 1: 26.562 GB/s
+	 Link 2: 26.562 GB/s
+	 Link 3: 26.562 GB/s
+	 Link 4: 26.562 GB/s
+	 Link 5: 26.562 GB/s
+	 Link 6: 26.562 GB/s
+	 Link 7: 26.562 GB/s
+	 Link 8: 26.562 GB/s
+	 Link 9: 26.562 GB/s
+	 Link 10: 26.562 GB/s
+	 Link 11: 26.562 GB/s
+	 Link 12: 26.562 GB/s
+	 Link 13: 26.562 GB/s
+	 Link 14: 26.562 GB/s
+	 Link 15: 26.562 GB/s
+	 Link 16: 26.562 GB/s
+	 Link 17: 26.562 GB/s

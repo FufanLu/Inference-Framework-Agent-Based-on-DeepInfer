@@ -1,0 +1,55 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-07T16:57:07-0500",
+    "host": "d4055",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "mode": "single",
+  "world_size": 1,
+  "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+  "results": [
+    {
+      "global_batch": 2,
+      "local_batch": 2,
+      "prompt": 512,
+      "prefill_ms": 3012.334228515625,
+      "decode_step_ms_p50": 28.142719268798828,
+      "decode_tokens_per_s": 71.06633800726404,
+      "prefill_tokens_per_s": 339.93571838958655
+    },
+    {
+      "global_batch": 16,
+      "local_batch": 16,
+      "prompt": 512,
+      "prefill_ms": 295.11907958984375,
+      "decode_step_ms_p50": 28.71004867553711,
+      "decode_tokens_per_s": 557.2961641696231,
+      "prefill_tokens_per_s": 27758.286625809607
+    },
+    {
+      "global_batch": 64,
+      "local_batch": 64,
+      "prompt": 512,
+      "prefill_ms": 1179.383544921875,
+      "decode_step_ms_p50": 28.90460777282715,
+      "decode_tokens_per_s": 2214.1798464452986,
+      "prefill_tokens_per_s": 27784.006433776914
+    },
+    {
+      "global_batch": 128,
+      "local_batch": 128,
+      "prompt": 512,
+      "prefill_ms": 2358.26806640625,
+      "decode_step_ms_p50": 29.601760864257812,
+      "decode_tokens_per_s": 4324.06709137873,
+      "prefill_tokens_per_s": 27789.885693474153
+    }
+  ]
+}

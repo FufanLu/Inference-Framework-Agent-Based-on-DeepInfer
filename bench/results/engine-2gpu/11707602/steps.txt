@@ -1,0 +1,15 @@
+build 0
+nccl-default 0
+nccl-proto-LL 0
+nccl-proto-LL128 0
+nccl-proto-Simple 0
+nccl-algo-Ring 0
+nccl-algo-Tree 0
+nccl-algo-NVLS 0
+nccl-no-p2p 0
+nccl-1channel 0
+parallel-single 0
+parallel-tp 0
+parallel-ep 0
+afd 1
+serve: workers not ready

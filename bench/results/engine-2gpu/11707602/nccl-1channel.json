@@ -1,0 +1,90 @@
+{
+  "world_size": 2,
+  "hosts": "d4055",
+  "nccl_env": {
+    "NCCL_MIN_NCHANNELS": "1",
+    "NCCL_MAX_NCHANNELS": "1"
+  },
+  "nccl_version": "2.29.7",
+  "torch": "2.13.0+cu129",
+  "time": "2026-11-07T16:51:38-0500",
+  "results": [
+    {
+      "op": "all_reduce",
+      "bytes": 1024,
+      "time_us": 18.639999628067017,
+      "algbw_GBps": 0.05493562341375377,
+      "busbw_GBps": 0.05493562341375377
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 4096,
+      "time_us": 17.91200041770935,
+      "algbw_GBps": 0.22867350962935107,
+      "busbw_GBps": 0.22867350962935107
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 16384,
+      "time_us": 17.646400630474087,
+      "algbw_GBps": 0.9284612960507078,
+      "busbw_GBps": 0.9284612960507078
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 65536,
+      "time_us": 17.985600233078003,
+      "algbw_GBps": 3.643803884813933,
+      "busbw_GBps": 3.643803884813933
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 262144,
+      "time_us": 44.79359984397888,
+      "algbw_GBps": 5.852264629613982,
+      "busbw_GBps": 5.852264629613982
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 1048576,
+      "time_us": 164.23200368881226,
+      "algbw_GBps": 6.384723905499246,
+      "busbw_GBps": 6.384723905499246
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 4194304,
+      "time_us": 207.69119262695312,
+      "algbw_GBps": 20.194905460115713,
+      "busbw_GBps": 20.194905460115713
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 16777216,
+      "time_us": 800.5135536193848,
+      "algbw_GBps": 20.958066136600305,
+      "busbw_GBps": 20.958066136600305
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 67108864,
+      "time_us": 3201.3519287109375,
+      "algbw_GBps": 20.962663741571887,
+      "busbw_GBps": 20.962663741571887
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 268435456,
+      "time_us": 12760.671997070312,
+      "algbw_GBps": 21.03615358670996,
+      "busbw_GBps": 21.03615358670996
+    },
+    {
+      "op": "all_reduce",
+      "bytes": 1073741824,
+      "time_us": 51015.27099609375,
+      "algbw_GBps": 21.04745898698091,
+      "busbw_GBps": 21.04745898698091
+    }
+  ]
+}

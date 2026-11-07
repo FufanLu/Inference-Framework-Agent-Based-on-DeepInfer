@@ -1,0 +1,16 @@
+listen = "127.0.0.1:8080"
+[[models]]
+name = "DeepSeek-V2-Lite-Chat"
+aliases = ["v2-lite"]
+version = "v2"
+tokenizer = "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat/tokenizer.json"
+context_limit = 8192
+[router]
+policy = "cache_aware"
+index_mode = "exact"
+[dispatch]
+ready_timeout_ms = 600000
+[[workers]]
+endpoint = "http://127.0.0.1:51061"
+[[workers]]
+endpoint = "http://127.0.0.1:51062"

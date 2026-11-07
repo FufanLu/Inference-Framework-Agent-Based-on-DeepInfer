@@ -3,7 +3,7 @@
 > Code: `engine/lev_engine/speculative.py` (`verify`, `NgramProposer`, `DraftProposer`), `scheduler.py` (lookahead slots), `engine.py` (`_draft`, `_resolve`), `cuda_graph.py` (verify graphs)
 > Tests: `engine/tests/test_speculative.py`, `test_triton_kernels.py::test_speculation_is_bit_for_bit_plain_decoding_on_invariant_kernels`, `test_cuda_graph.py` (GPU)
 > Real data: traces from the tiny test checkpoints (below); H200 measurements from `deploy/slurm/spec_h200.sbatch` (pending, see the end)
-> Previous: [10 Leviathan's own engine](10-lev-engine.md)
+> Previous: [10 Leviathan's own engine](10-lev-engine.md) · Next: [12 Two GPUs](12-two-gpus.md)
 
 A decode step reads every weight and the whole KV context to produce one token per sequence; at small batch the GPU is waiting on memory, not arithmetic, so running 5 tokens per sequence through the same step costs little more than 1. Speculative decoding spends that slack: guess k tokens cheaply, run the target model on all of them in one step, keep the ones the target agrees with.
 

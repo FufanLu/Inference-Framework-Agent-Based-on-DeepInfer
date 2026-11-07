@@ -1,0 +1,42 @@
+{
+ "mode": "afd-1a1f",
+ "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+ "note": "parsed from afd.log: the run deadlocked at global_batch 128, micro_batches 2 (NCCL watchdog, SEND seq 9452) before writing its JSON",
+ "results": [
+  {
+   "global_batch": 16,
+   "micro_batches": 1,
+   "prefill_argmax_agreement_vs_1gpu": 1.0,
+   "decode_step_ms_p50": 19.826528549194336,
+   "decode_tokens_per_s": 806.9995693043385
+  },
+  {
+   "global_batch": 16,
+   "micro_batches": 2,
+   "prefill_argmax_agreement_vs_1gpu": 1.0,
+   "decode_step_ms_p50": 39.31033706665039,
+   "decode_tokens_per_s": 407.0176242160457
+  },
+  {
+   "global_batch": 64,
+   "micro_batches": 1,
+   "prefill_argmax_agreement_vs_1gpu": 1.0,
+   "decode_step_ms_p50": 22.22492790222168,
+   "decode_tokens_per_s": 2879.6493865612197
+  },
+  {
+   "global_batch": 64,
+   "micro_batches": 2,
+   "prefill_argmax_agreement_vs_1gpu": 1.0,
+   "decode_step_ms_p50": 39.494911193847656,
+   "decode_tokens_per_s": 1620.4619295351054
+  },
+  {
+   "global_batch": 128,
+   "micro_batches": 1,
+   "prefill_argmax_agreement_vs_1gpu": 1.0,
+   "decode_step_ms_p50": 24.547040939331055,
+   "decode_tokens_per_s": 5214.4777986217105
+  }
+ ]
+}

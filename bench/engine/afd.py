@@ -10,7 +10,10 @@ computes micro-batch B's attention for layer l.
     rank 1:                 │ ffn(A,l)  send │ ffn(B,l)  send           │ ffn(A,l+1) ...
 
 Hidden states cross with NCCL send/recv (2 x 27 transfers per micro-batch
-per step). With two GPUs the ratio can only be 1:1; AFD's point at scale is
+per step), one communicator per direction. On a single communicator NCCL runs
+unbatched P2P ops in issue order, so rank 0's send of micro-batch B and rank
+1's send of A's FFN output wait on each other once a message is too big to
+buffer (deadlocked at 64 x 512 prefill rows, job 11707602). With two GPUs the ratio can only be 1:1; AFD's point at scale is
 choosing M attention GPUs for N FFN GPUs.
 
     torchrun --nproc-per-node 2 bench/engine/afd.py --model $M --out r/afd.json
@@ -32,6 +35,10 @@ from lev_engine.config import ModelSpec
 from lev_engine.models.deepseek_v2 import DeepseekV2, _Moe
 from lev_engine.ops import get_ops
 from lev_engine.weights import load_state_dict
+
+
+TO_FFN: dist.ProcessGroup | None = None  # rank 0 -> rank 1: normed hidden states
+TO_ATTN: dist.ProcessGroup | None = None  # rank 1 -> rank 0: FFN outputs
 
 
 def ffn(model: DeepseekV2, layer, h: torch.Tensor) -> torch.Tensor:
@@ -65,16 +72,16 @@ class AttentionSide:
         for layer, cache in zip(m.layers, self.cache, strict=True):
             for g, b in enumerate(batches):
                 if pending[g] is not None:  # layer l-1's FFN for this micro-batch
-                    dist.recv(pending[g], 1)
+                    dist.recv(pending[g], 1, group=TO_ATTN)
                     xs[g] = xs[g] + pending[g]
                 # ...while rank 1 works on the other micro-batch's FFN.
                 h = m.ops.rms_norm(xs[g], layer.input_norm, s.rms_norm_eps)
                 xs[g] = xs[g] + m._attention(layer.attn, h, b, cache)
                 h2 = m.ops.rms_norm(xs[g], layer.post_attention_norm, s.rms_norm_eps).contiguous()
-                sends.append((dist.isend(h2, 1), h2))
+                sends.append((dist.isend(h2, 1, group=TO_FFN), h2))
                 pending[g] = torch.empty_like(xs[g])
         for g in range(len(batches)):
-            dist.recv(pending[g], 1)
+            dist.recv(pending[g], 1, group=TO_ATTN)
             xs[g] = xs[g] + pending[g]
         for work, _ in sends:
             work.wait()
@@ -94,8 +101,8 @@ def ffn_side(model: DeepseekV2, shapes: list[tuple[int, int]]) -> None:
     for layer in model.layers:
         for rows, _ in shapes:
             h = torch.empty((rows, hidden), dtype=model.dtype, device="cuda")
-            dist.recv(h, 0)
-            dist.send(ffn(model, layer, h).contiguous(), 0)
+            dist.recv(h, 0, group=TO_FFN)
+            dist.send(ffn(model, layer, h).contiguous(), 0, group=TO_ATTN)
 
 
 def main() -> None:
@@ -111,6 +118,8 @@ def main() -> None:
     torch.cuda.set_device(local)
     dist.init_process_group("nccl", device_id=torch.device("cuda", local))
     rank = dist.get_rank()
+    global TO_FFN, TO_ATTN
+    TO_FFN, TO_ATTN = dist.new_group([0, 1]), dist.new_group([0, 1])
     spec = ModelSpec.from_pretrained(args.model)
     model = DeepseekV2(spec, load_state_dict(args.model, torch.bfloat16, "cuda"), get_ops("triton", False), 4096, "cuda")
     rows = []
@@ -144,6 +153,7 @@ def main() -> None:
                        "decode_tokens_per_s": B / (times[len(times) // 2] / 1e3)}  # fmt: skip
                 rows.append(row)
                 print("afd", row, flush=True)
+                write(args.out, {"mode": "afd-1a1f", "model": args.model, "results": rows})  # keep partial rows
                 del side
             else:
                 ffn_side(model, [(len(g) * args.prompt, 0) for g in groups])  # prefill
@@ -151,8 +161,6 @@ def main() -> None:
                     ffn_side(model, [(len(g), 0) for g in groups])
             torch.cuda.empty_cache()
             dist.barrier()
-    if rank == 0:
-        write(args.out, {"mode": "afd-1a1f", "model": args.model, "results": rows})
     dist.destroy_process_group()
 
 

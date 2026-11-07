@@ -9,6 +9,11 @@ export MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4.1-Flash-1017}"
 export MODEL_DIR="${MODEL_DIR:-$HF_HOME/models/DeepSeek-V4.1-Flash-1017}"
 export LEV_ENV="${LEV_ENV:-$LEV_SCRATCH/envs/vllm}"
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+# Explorer sets http_proxy for every job. Local traffic (curl and lev-bench
+# against the gateway, the gateway's HTTP health checks) must bypass it, or
+# requests to 127.0.0.1 go to the proxy and fail.
+export no_proxy="127.0.0.1,localhost${no_proxy:+,$no_proxy}"
+export NO_PROXY="$no_proxy"
 
 lev_activate() {
     module load miniconda3/25.9.1 >/dev/null 2>&1 || true
