@@ -2,7 +2,7 @@
 
 > Code: `engine/lev_engine/` (`models/deepseek_v2.py`, `kv_cache.py`, `scheduler.py`, `sampler.py`, `batch.py`, `ops/reference.py`, `ops/triton/kernels.py`), `worker/leviathan_worker/backends/lev_backend.py`
 > Tests: `engine/tests/` (against transformers in float64; Triton kernels bit for bit under `TRITON_INTERPRET=1`; the worker backend), CI job `engine`
-> Real data: scheduler traces from the tiny test checkpoint (below); H200 measurements from `deploy/slurm/engine_h200.sbatch` (pending, see the end)
+> Real data: scheduler traces from the tiny test checkpoint (below); H200 measurements from `deploy/slurm/engine_h200.sbatch`, job 11707247 (see the end)
 > Previous: [09 Bursts, Kafka and admission control](09-bursts-and-kafka.md) · Next: [11 Speculative decoding](11-speculative-decoding.md)
 
 Up to chapter 09, everything below the gateway was someone else's engine (vLLM) or a simulation of one. `lev-engine` is the part of the stack where Leviathan owns the KV cache, the scheduler, the kernels and the numerics. It serves DeepSeek-V2 checkpoints (MLA + DeepSeekMoE; V2-Lite is 15.7 B parameters, 2.4 B active, and fits one H200) and plugs into the worker as `--backend lev`, so the gateway, router, KV events and benchmarks of the earlier chapters run on top of it unchanged.
@@ -127,7 +127,59 @@ The float64 comparison uses an fp32-sized tolerance (1e-5 relative) because tran
 
 ## Measured on H200
 
-Pending: `deploy/slurm/engine_h200.sbatch` (DeepSeek-V2-Lite-Chat, one H200, bf16) measures logits parity with transformers, batch invariance under three kernel configurations, kernel microbenchmarks against cuBLAS and the reference, and offline throughput against vLLM on the same GPU. The tables go here when it has run.
+Job 11707247 (`deploy/slurm/engine_h200.sbatch`): one H200 (node d4053, driver 570.86.15), torch 2.13.0+cu129, Triton 3.7.1, vLLM 0.31.0, DeepSeek-V2-Lite-Chat in bf16. Raw JSON: `bench/results/engine-h200/11707247/`. The engine's test suite, with compiled Triton kernels on the GPU: 40 passed.
+
+### Batch invariance on the real model
+
+One target request (17-token prompt, seeded sampling, 128 output tokens with logprobs) runs alone, then next to 1, 4, 16 and 64 other requests. Each row compares its output against the solo run:
+
+| kernels | crowd of 1 | 4 | 16 | 64 |
+| --- | --- | --- | --- | --- |
+| reference (PyTorch ops, cuBLAS) | diverges at token 31; 36/128 logprobs bit-equal | token 31; 36/128 | token 31; 42/128 | token 31; 38/128 |
+| Triton attention/MoE, cuBLAS GEMMs | token 27; 38/128 | token 68; 40/128 | token 31; 33/128 | token 68; 41/128 |
+| Triton, `batch_invariant=True` | **identical; 128/128** | **128/128** | **128/128** | **128/128** |
+
+One neighbour is enough to change the target's tokens unless every GEMM is batch-invariant. With the invariant kernels the logprobs are equal bit for bit, which is what exact replay and RL logprob checks need. vLLM is in the same position as the first rows: in the 10-minute smoke job before this one (11707207, `bench/results/gpu-smoke/11707207/vllm-report.json`), vLLM generated a 321-token prompt twice at temperature 0, the second time from its prefix cache (320 tokens cached), and the two outputs differed.
+
+### What it costs
+
+Kernel microbenchmarks (median of `triton.testing.do_bench`, bf16, V2-Lite's shapes):
+
+| op | shape | cuBLAS / reference | lev Triton | |
+| --- | --- | --- | --- | --- |
+| RMSNorm | 8192 rows | 0.239 ms (torch) | 0.023 ms, 2.97 TB/s | one program per row |
+| linear `q_proj` 2048→3072 | M = 1 | 0.011 ms | 0.031 ms | fixed 64×64×32 tile: 2.9× slower |
+| | M = 4096 | 0.074 ms, 697 TFLOP/s | 0.171 ms, 301 TFLOP/s | 2.3× slower |
+| `lm_head` 2048→102400 | M = 1 | 0.119 ms, 3.5 TB/s | 0.163 ms, 2.6 TB/s | |
+| MLA decode | batch 256, context 1024 | 53.7 ms (gather + einsum) | 0.168 ms, 1.80 TB/s | |
+| | batch 1, context 8192 | 0.191 ms | **1.03 ms** | no split-KV: one program reads all 8192 latents |
+| MoE (64 experts, top-6) | 256 tokens | 3.81 ms (per-expert loop) | 0.68 ms | sorted grouped GEMM |
+| | 8192 tokens | 4.66 ms, 182 TFLOP/s | **8.32 ms**, 102 TFLOP/s | per-expert cuBLAS wins at large M |
+
+The two bold rows are where batch invariance costs most: a single long-context decode cannot be split across programs (split-KV would make the reduction order depend on the split), and the grouped GEMM's one tile shape loses to cuBLAS's per-shape choice on large expert batches.
+
+Offline throughput, random token-ID prompts (no prefix reuse), 512 prompt and 256 output tokens, same GPU:
+
+| engine | 256 requests: output tok/s | 1 request: output tok/s | decode ms/token |
+| --- | --- | --- | --- |
+| vLLM 0.31.0 (torch.compile, CUDA graphs) | 11 709 | 318 | – |
+| lev, Triton | 4 666 | 35.8 | 27.9 |
+| lev, Triton batch-invariant | 4 168 | 37.2 | 26.9 |
+| lev, PyTorch reference | 192 | 27.8 | 35.7 |
+
+At batch 256, invariance costs 11 % of lev's throughput (4 168 vs 4 666), and lev reaches 40 % of vLLM. At batch 1 the gap is 9×. This run had CUDA graphs and overlapped scheduling off (both exist in the engine, see `cuda_graph.py`). A single sequence's step launches the kernels of 27 layers one by one from Python, so 28 ms per token is likely launch overhead rather than GPU time. That is an expectation, not a measurement yet: `spec_h200.sbatch` reruns the same workloads with graphs and overlap on.
+
+Logits parity with transformers (bf16 on both sides, 8 prompts, 326 positions):
+
+| lev kernels | top-1 agreement | mean KL(transformers ‖ lev) | max abs logit diff |
+| --- | --- | --- | --- |
+| reference | 97.2 % | 0.0074 | 7.25 |
+| Triton | 96.6 % | 0.0096 | 5.88 |
+| Triton batch-invariant | 98.2 % | 0.0089 | 4.38 |
+
+The plain-PyTorch reference backend is as far from transformers as the Triton kernels are, so this is the distance between two bf16 implementations of the same network, which round in different orders (for example, absorbed vs expanded MLA). Exactness is checked in float64 in CI, where lev matches transformers to 1e-5.
+
+**One finding from getting here:** the first run (job 11634318) waited two days in the queue and then failed every step in three minutes. The env's PyTorch was built for CUDA 13.0, while the H200 nodes run driver 570 (CUDA 12.8). Every GPU job now starts with `deploy/slurm/preflight_gpu.py`, which checks CUDA, cuBLAS, Triton and NCCL on the allocated node in seconds. A 10-minute `gpu_smoke.sbatch` checks a changed env before the long jobs are queued.
 
 ## Why it is built this way
 

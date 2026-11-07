@@ -1,0 +1,145 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-07T13:24:35-0500",
+    "host": "d4053",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+  "tokens": 128,
+  "target_prompt_tokens": 17,
+  "results": {
+    "reference (cuBLAS)": [
+      {
+        "crowd": 0,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 1,
+        "tokens_identical": false,
+        "first_divergent_token": 31,
+        "logprobs_bitwise_equal": 36,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 7.096827979313621
+      },
+      {
+        "crowd": 4,
+        "tokens_identical": false,
+        "first_divergent_token": 31,
+        "logprobs_bitwise_equal": 36,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 7.096827979313621
+      },
+      {
+        "crowd": 16,
+        "tokens_identical": false,
+        "first_divergent_token": 31,
+        "logprobs_bitwise_equal": 42,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 7.096827979313621
+      },
+      {
+        "crowd": 64,
+        "tokens_identical": false,
+        "first_divergent_token": 31,
+        "logprobs_bitwise_equal": 38,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 7.096827979313621
+      }
+    ],
+    "triton (cuBLAS GEMMs)": [
+      {
+        "crowd": 0,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 1,
+        "tokens_identical": false,
+        "first_divergent_token": 27,
+        "logprobs_bitwise_equal": 38,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 10.070916337855634
+      },
+      {
+        "crowd": 4,
+        "tokens_identical": false,
+        "first_divergent_token": 68,
+        "logprobs_bitwise_equal": 40,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 4.926273595734865
+      },
+      {
+        "crowd": 16,
+        "tokens_identical": false,
+        "first_divergent_token": 31,
+        "logprobs_bitwise_equal": 33,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 4.67494984904051
+      },
+      {
+        "crowd": 64,
+        "tokens_identical": false,
+        "first_divergent_token": 68,
+        "logprobs_bitwise_equal": 41,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 4.999079916223403
+      }
+    ],
+    "triton batch-invariant": [
+      {
+        "crowd": 0,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 1,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 4,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 16,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      },
+      {
+        "crowd": 64,
+        "tokens_identical": true,
+        "first_divergent_token": null,
+        "logprobs_bitwise_equal": 128,
+        "logprobs_compared": 128,
+        "max_logprob_diff": 0.0
+      }
+    ]
+  }
+}

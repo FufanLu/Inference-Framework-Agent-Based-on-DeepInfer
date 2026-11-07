@@ -186,7 +186,8 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
   - [x] batch-invariant Triton 算子（GEMM、MLA 与 GQA 注意力、分组 MoE、RMSNorm）与带 seed 的 Gumbel-max 采样
   - [x] 张量并行与专家并行（TP2 / EP2 + DP 注意力），已与单进程结果对齐
   - [x] 投机解码：n-gram 与 draft 模型两种 proposer，验证规则保证输出与逐个解码一致（invariant 算子下逐位一致），verify 步的 CUDA Graph；H200 作业（`spec_h200.sbatch`）排在第四个，2 节点作业之后
-  - [ ] H200 实测：与 transformers 数值对齐、invariance、算子、对比 vLLM 的吞吐、TP2 / EP2、NCCL 调优（作业已写好、排队中）
+  - [x] 单卡 H200 实测（作业 11707247）：用 batch-invariant 算子时，一个请求单独跑和夹在 64 个请求中间跑，128 个 logprob 逐位相等（cuBLAS 下只要多一个请求，token 就会分歧）；batch 256 时输出 4 168 tok/s，vLLM 为 11 709（未开 CUDA Graph）；invariance 带来 11% 的吞吐损失
+  - [ ] 双卡 H200：TP2 / EP2、NCCL 调优（`engine_2gpu.sbatch` 排队中）
   - [ ] CUDA Graph 与重叠调度
 - [ ] P8 RL：GRPO 闭环（含权重同步与训推差异指标，已在 CPU 上测试），H200 运行待做
 

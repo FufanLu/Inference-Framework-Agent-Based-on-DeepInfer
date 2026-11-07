@@ -1,0 +1,776 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-07T13:21:10-0500",
+    "host": "d4053",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "dtype": "bfloat16",
+  "peaks": {
+    "note": "H200 SXM datasheet: ~989 dense BF16 TFLOP/s, 4.8 TB/s HBM3e"
+  },
+  "results": {
+    "norm": [
+      {
+        "kernel": "rms_norm",
+        "M": 1,
+        "impl": "torch",
+        "ms": 0.02532904927969956,
+        "gbps": 0.32342311428821097
+      },
+      {
+        "kernel": "rms_norm",
+        "M": 1,
+        "impl": "triton",
+        "ms": 0.00579187351098586,
+        "gbps": 1.4143955292638295
+      },
+      {
+        "kernel": "rms_norm",
+        "M": 256,
+        "impl": "torch",
+        "ms": 0.037003354770281625,
+        "gbps": 56.67464512391397
+      },
+      {
+        "kernel": "rms_norm",
+        "M": 256,
+        "impl": "triton",
+        "ms": 0.006595543896972274,
+        "gbps": 317.96498253354224
+      },
+      {
+        "kernel": "rms_norm",
+        "M": 8192,
+        "impl": "torch",
+        "ms": 0.2391077473356917,
+        "gbps": 280.66369554217545
+      },
+      {
+        "kernel": "rms_norm",
+        "M": 8192,
+        "impl": "triton",
+        "ms": 0.022583960610547384,
+        "gbps": 2971.5276765342105
+      }
+    ],
+    "linear": [
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 1,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.01101460627309381,
+        "tflops": 1.1423841840572373,
+        "gbps": 1143.31385868619
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 1,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03149189626957902,
+        "tflops": 0.3995603152089326,
+        "gbps": 399.8854782258669
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 16,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.011441731902914235,
+        "tflops": 17.595814489301368,
+        "gbps": 1114.057916070676
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 16,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03195919120708505,
+        "tflops": 6.299489580179608,
+        "gbps": 398.8446365055123
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 64,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.011620848517580036,
+        "tflops": 69.29841368999273,
+        "gbps": 1139.1829073387476
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 64,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03237750089959748,
+        "tflops": 24.87240662882698,
+        "gbps": 408.8725699074748
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 256,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.012884657940484334,
+        "tflops": 250.00473329437213,
+        "gbps": 1180.0353622292955
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 256,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03302095784129783,
+        "tflops": 97.55093984497803,
+        "gbps": 460.4455168464132
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 1024,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.023660730339674096,
+        "tflops": 544.5690687913684,
+        "gbps": 974.9771739428796
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 1024,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.04503691339781809,
+        "tflops": 286.09646878296587,
+        "gbps": 512.2169851257527
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 4096,
+        "N": 3072,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.07391123414198135,
+        "tflops": 697.3176425791227,
+        "gbps": 737.7221153587724
+      },
+      {
+        "kernel": "linear",
+        "shape": "q_proj",
+        "M": 4096,
+        "N": 3072,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.17120999984305213,
+        "tflops": 301.03152619149733,
+        "gbps": 318.47410811274943
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 1,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.009927759634930923,
+        "tflops": 0.23764636602389053,
+        "gbps": 238.1749847851199
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 1,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.028574875204026805,
+        "tflops": 0.08256539995903553,
+        "gbps": 82.7490578039965
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 16,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.009702197107249585,
+        "tflops": 3.8907409922432667,
+        "gbps": 251.82584655741195
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 16,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.028971173244355643,
+        "tflops": 1.3029757435644918,
+        "gbps": 84.33431326347865
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 64,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.009904067588209267,
+        "tflops": 15.2457505620982,
+        "gbps": 272.12738362252105
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 64,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.029632480152523424,
+        "tflops": 5.095589138094526,
+        "gbps": 90.9531698368652
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 256,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.01025105536913404,
+        "tflops": 58.918789749061844,
+        "gbps": 361.21002830099764
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 256,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.02958453712201687,
+        "tflops": 20.41538704861186,
+        "gbps": 125.15943665869901
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 1024,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.011185051387708101,
+        "tflops": 215.9953513181882,
+        "gbps": 691.3913697793569
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 1024,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03029137070145872,
+        "tflops": 79.75601790392597,
+        "gbps": 255.2954132124366
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 4096,
+        "N": 576,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.01962775979086673,
+        "tflops": 492.34739567664474,
+        "gbps": 1215.3757868536966
+      },
+      {
+        "kernel": "linear",
+        "shape": "kv_a_proj",
+        "M": 4096,
+        "N": 576,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03793880885067666,
+        "tflops": 254.7174439249071,
+        "gbps": 628.7784124665403
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 1,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.01042279025429425,
+        "tflops": 0.8048332351832413,
+        "gbps": 805.619205139475
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 1,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03037154287033315,
+        "tflops": 0.2761996002578444,
+        "gbps": 276.4693264299712
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 16,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.010542251915646951,
+        "tflops": 12.731409671665334,
+        "gbps": 808.1461217365691
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 16,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.030915271784826243,
+        "tflops": 4.341470097179492,
+        "gbps": 275.5815979654951
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 64,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.010782539237359706,
+        "tflops": 49.7907682208873,
+        "gbps": 826.6045505420743
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 64,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03129148651352304,
+        "tflops": 17.15709197030266,
+        "gbps": 284.8345346632277
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 256,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.011430399990452951,
+        "tflops": 187.87475939544106,
+        "gbps": 917.3572236105521
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 256,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.03173938300291553,
+        "tflops": 67.65990529188092,
+        "gbps": 330.3706313080123
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 1024,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.017892936572794255,
+        "tflops": 480.07405363861693,
+        "gbps": 937.6446360129237
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 1024,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.035263578971161655,
+        "tflops": 243.5922513430868,
+        "gbps": 475.7661159044664
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 4096,
+        "N": 2048,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.04944145766343445,
+        "tflops": 694.9580370768786,
+        "gbps": 848.3374476036116
+      },
+      {
+        "kernel": "linear",
+        "shape": "o_proj",
+        "M": 4096,
+        "N": 2048,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.11781327682670462,
+        "tflops": 291.645723584625,
+        "gbps": 356.0128461726379
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 1,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.11933568896653374,
+        "tflops": 3.5147105080829943,
+        "gbps": 3516.4609986680753
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 1,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.16296841177497667,
+        "tflops": 2.573691400877985,
+        "gbps": 2574.9732198374068
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 16,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.12068034294726593,
+        "tflops": 55.60877800067636,
+        "gbps": 3503.244403148078
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 16,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.17053881260358036,
+        "tflops": 39.35107966067255,
+        "gbps": 2479.041161044909
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 64,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.12152997464268474,
+        "tflops": 220.88003950403024,
+        "gbps": 3561.2592306753318
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 64,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.18806676522449212,
+        "tflops": 142.7341272550592,
+        "gbps": 2301.3090243955344
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 256,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.17769628826965084,
+        "tflops": 604.2567542945054,
+        "gbps": 2661.3261346369327
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 256,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 0.3903119644967679,
+        "tflops": 275.0983627633304,
+        "gbps": 1211.6148594361525
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 1024,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 0.6488660775221787,
+        "tflops": 661.918914362293,
+        "gbps": 976.0718366084594
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 1024,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 1.3936518810012124,
+        "tflops": 308.18078420806603,
+        "gbps": 454.44627358806616
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 4096,
+        "N": 102400,
+        "K": 2048,
+        "impl": "cuBLAS",
+        "ms": 2.6987047851085664,
+        "tflops": 636.596832628689,
+        "gbps": 472.47421171660505
+      },
+      {
+        "kernel": "linear",
+        "shape": "lm_head",
+        "M": 4096,
+        "N": 102400,
+        "K": 2048,
+        "impl": "triton-invariant",
+        "ms": 5.824296027421951,
+        "tflops": 294.969024636003,
+        "gbps": 218.92232297203347
+      }
+    ],
+    "mla_decode": [
+      {
+        "kernel": "mla_decode",
+        "batch": 1,
+        "context": 1024,
+        "impl": "reference (gather + einsum)",
+        "ms": 0.1880716432336789,
+        "gbps": 6.272333137081639,
+        "tflops": 0.18956384592068956
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 1,
+        "context": 1024,
+        "impl": "triton",
+        "ms": 0.13690721693859306,
+        "gbps": 8.616404791349362,
+        "tflops": 0.2604069003607808
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 1,
+        "context": 8192,
+        "impl": "reference (gather + einsum)",
+        "ms": 0.19109499450426937,
+        "gbps": 49.384778625319555,
+        "tflops": 1.4925177540096577
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton",
+        "ms": 1.0299586869858124,
+        "gbps": 9.162682075742323,
+        "tflops": 0.2769166138446568
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 16,
+        "context": 1024,
+        "impl": "reference (gather + einsum)",
+        "ms": 3.4189450905240815,
+        "gbps": 5.520523875130968,
+        "tflops": 0.16684249933729148
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 16,
+        "context": 1024,
+        "impl": "triton",
+        "ms": 0.14003805566831415,
+        "gbps": 134.78027747475093,
+        "tflops": 4.073359497014695
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 64,
+        "context": 1024,
+        "impl": "reference (gather + einsum)",
+        "ms": 13.450432096208845,
+        "gbps": 5.613014619900562,
+        "tflops": 0.169637775179217
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 64,
+        "context": 1024,
+        "impl": "triton",
+        "ms": 0.1461650928371496,
+        "gbps": 516.5219036539443,
+        "tflops": 15.61043975487476
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 64,
+        "context": 4096,
+        "impl": "reference (gather + einsum)",
+        "ms": 13.725462913513184,
+        "gbps": 22.002164145784892,
+        "tflops": 0.6649542941837212
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 64,
+        "context": 4096,
+        "impl": "triton",
+        "ms": 0.5367940962314606,
+        "gbps": 562.5804943089106,
+        "tflops": 17.00243271689152
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 256,
+        "context": 1024,
+        "impl": "reference (gather + einsum)",
+        "ms": 53.67865753173828,
+        "gbps": 5.62588376621461,
+        "tflops": 0.1700267093789304
+      },
+      {
+        "kernel": "mla_decode",
+        "batch": 256,
+        "context": 1024,
+        "impl": "triton",
+        "ms": 0.1682011223823776,
+        "gbps": 1795.4094700597516,
+        "tflops": 54.26126398402805
+      }
+    ],
+    "moe": [
+      {
+        "kernel": "moe",
+        "tokens": 1,
+        "impl": "reference (per-expert loop)",
+        "ms": 0.5110394316312123,
+        "tflops": 0.20313310005970925
+      },
+      {
+        "kernel": "moe",
+        "tokens": 1,
+        "impl": "triton grouped GEMM",
+        "ms": 0.31647945013169054,
+        "tflops": 0.3280118944746774
+      },
+      {
+        "kernel": "moe",
+        "tokens": 16,
+        "impl": "reference (per-expert loop)",
+        "ms": 2.9087049744345923,
+        "tflops": 0.5710253871047415
+      },
+      {
+        "kernel": "moe",
+        "tokens": 16,
+        "impl": "triton grouped GEMM",
+        "ms": 0.4909709768239842,
+        "tflops": 3.3829787551687756
+      },
+      {
+        "kernel": "moe",
+        "tokens": 256,
+        "impl": "reference (per-expert loop)",
+        "ms": 3.8098483180999754,
+        "tflops": 6.975372226171298
+      },
+      {
+        "kernel": "moe",
+        "tokens": 256,
+        "impl": "triton grouped GEMM",
+        "ms": 0.6799847401105441,
+        "tflops": 39.08192136735263
+      },
+      {
+        "kernel": "moe",
+        "tokens": 2048,
+        "impl": "reference (per-expert loop)",
+        "ms": 4.032037377357483,
+        "tflops": 52.72790434580108
+      },
+      {
+        "kernel": "moe",
+        "tokens": 2048,
+        "impl": "triton grouped GEMM",
+        "ms": 2.2307944242344346,
+        "tflops": 95.30276696157715
+      },
+      {
+        "kernel": "moe",
+        "tokens": 8192,
+        "impl": "reference (per-expert loop)",
+        "ms": 4.662898336138044,
+        "tflops": 182.37659569312643
+      },
+      {
+        "kernel": "moe",
+        "tokens": 8192,
+        "impl": "triton grouped GEMM",
+        "ms": 8.31547991434733,
+        "tflops": 102.26752194310927
+      }
+    ]
+  }
+}

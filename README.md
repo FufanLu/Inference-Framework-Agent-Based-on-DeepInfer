@@ -186,7 +186,8 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] batch-invariant Triton kernels (GEMM, MLA and GQA attention, grouped MoE, RMSNorm) and seeded Gumbel-max sampling
   - [x] tensor and expert parallelism (TP2 / EP2 with DP attention), checked against one process
   - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 run (`spec_h200.sbatch`) queued fourth, after the 2-node job
-  - [ ] H200 measurements: parity with transformers, invariance, kernels, throughput vs vLLM, TP2 / EP2, NCCL tuning (jobs written, queued)
+  - [x] H200, one GPU (job 11707247): with batch-invariant kernels a request's 128 logprobs are bit-equal alone and next to 64 others (cuBLAS: tokens diverge with one neighbour); 4 168 vs vLLM's 11 709 output tok/s at batch 256, eager; invariance costs 11 %
+  - [ ] H200, two GPUs: TP2 / EP2, NCCL tuning (`engine_2gpu.sbatch` queued)
   - [ ] CUDA graphs and overlapped scheduling
 - [ ] P8 RL: GRPO loop with weight sync and mismatch metrics (CPU-tested), H200 run pending
 

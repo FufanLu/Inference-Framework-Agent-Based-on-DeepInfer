@@ -1,0 +1,17 @@
+{
+  "job": 11707207,
+  "what": "vLLM 0.31.0, DeepSeek-V2-Lite-Chat, one prompt generated twice at temperature 0, second time served from the prefix cache (deploy/slurm/preflight_vllm.py)",
+  "flags": "",
+  "exit": 0,
+  "seconds": 217.4,
+  "result": {
+    "load_s": 198.2,
+    "prompt_tokens": 321,
+    "text": "1.441.<\uff5cend\u2581of\u2581sentence\uff5c>",
+    "cached_tokens_second": 320,
+    "deterministic": false,
+    "block_size": 16,
+    "gpu_blocks": 184366,
+    "kv_cache_dtype": "auto"
+  }
+}

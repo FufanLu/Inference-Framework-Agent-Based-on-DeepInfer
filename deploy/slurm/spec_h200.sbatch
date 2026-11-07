@@ -4,12 +4,14 @@
 #SBATCH --gres=gpu:h200:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=160G
-#SBATCH --time=02:30:00
+#SBATCH --time=03:00:00
 #SBATCH --output=logs/%x-%j.out
 # Speculative decoding in lev-engine on one H200:
 #   1. the speculative tests on the GPU (compiled kernels, verify graphs)
 #   2. n-gram prompt lookup on DeepSeek-V2-Lite-Chat (MLA + MoE)
 #   3. Qwen3-8B with a Qwen3-0.6B draft (coupled and greedy), and n-gram
+#   4. what CUDA graphs and overlapped scheduling buy lev-engine on V2-Lite
+#      (engine_h200 measured eager only: 27.9 ms per token at batch 1)
 # Each run is checked against plain decoding on the same kernels.
 #   sbatch deploy/slurm/spec_h200.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
@@ -41,6 +43,10 @@ step() {
 step gpu-tests 900 bash -c "cd engine && PYTHONPATH=../worker python -m pytest -q -p no:cacheprovider -rs \
     tests/test_speculative.py tests/test_cuda_graph.py tests/test_triton_kernels.py"
 step spec-v2lite 2400 python bench/engine/speculative.py --model "$V2" --template v2 --out "$OUT/spec-v2lite.json"
+for engine in lev:triton+graph lev:triton+graph+overlap lev:triton-invariant+graph; do
+    name="throughput-${engine//[:+]/-}"
+    step "$name" 900 python bench/engine/throughput.py --engine "$engine" --model "$V2" --out "$OUT/$name.json"
+done
 step spec-qwen3 4200 python bench/engine/speculative.py --model "$Q8" --draft "$Q06" --template qwen3 \
     --out "$OUT/spec-qwen3.json"
 echo "done $(date +%T)"

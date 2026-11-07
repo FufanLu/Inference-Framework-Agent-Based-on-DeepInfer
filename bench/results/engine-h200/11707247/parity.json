@@ -1,0 +1,220 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-07T13:21:49-0500",
+    "host": "d4053",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+  "dtype": "bfloat16",
+  "prompt_lengths": [
+    35,
+    63,
+    41,
+    42,
+    34,
+    17,
+    57,
+    37
+  ],
+  "results": {
+    "reference": {
+      "per_prompt": [
+        {
+          "positions": 35,
+          "max_abs_logit_diff": 2.125,
+          "mean_kl": 0.00483494158834219,
+          "max_kl": 0.026807159185409546,
+          "top1_agreement": 0.9714285731315613
+        },
+        {
+          "positions": 63,
+          "max_abs_logit_diff": 7.25,
+          "mean_kl": 0.0009159984765574336,
+          "max_kl": 0.01572435349225998,
+          "top1_agreement": 0.9841269850730896
+        },
+        {
+          "positions": 41,
+          "max_abs_logit_diff": 4.3125,
+          "mean_kl": 0.03557030111551285,
+          "max_kl": 0.22605472803115845,
+          "top1_agreement": 0.9024389982223511
+        },
+        {
+          "positions": 42,
+          "max_abs_logit_diff": 1.875,
+          "mean_kl": 0.005075367633253336,
+          "max_kl": 0.022169172763824463,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 34,
+          "max_abs_logit_diff": 1.796875,
+          "mean_kl": 0.0013794939732179046,
+          "max_kl": 0.007149692624807358,
+          "top1_agreement": 0.970588207244873
+        },
+        {
+          "positions": 17,
+          "max_abs_logit_diff": 2.78125,
+          "mean_kl": 0.013858276419341564,
+          "max_kl": 0.1773676574230194,
+          "top1_agreement": 0.9411764740943909
+        },
+        {
+          "positions": 57,
+          "max_abs_logit_diff": 1.84375,
+          "mean_kl": 0.002055629389360547,
+          "max_kl": 0.021907998248934746,
+          "top1_agreement": 0.9824561476707458
+        },
+        {
+          "positions": 37,
+          "max_abs_logit_diff": 1.3125,
+          "mean_kl": 0.0033307012636214495,
+          "max_kl": 0.0111719761043787,
+          "top1_agreement": 1.0
+        }
+      ],
+      "positions": 326,
+      "max_abs_logit_diff": 7.25,
+      "mean_kl": 0.007427542828569086,
+      "top1_agreement": 0.9723926336487378
+    },
+    "triton": {
+      "per_prompt": [
+        {
+          "positions": 35,
+          "max_abs_logit_diff": 1.25,
+          "mean_kl": 0.0028222701512277126,
+          "max_kl": 0.009023834019899368,
+          "top1_agreement": 0.9714285731315613
+        },
+        {
+          "positions": 63,
+          "max_abs_logit_diff": 3.25,
+          "mean_kl": 0.0008213636465370655,
+          "max_kl": 0.02139388769865036,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 41,
+          "max_abs_logit_diff": 5.875,
+          "mean_kl": 0.04392541944980621,
+          "max_kl": 0.26282432675361633,
+          "top1_agreement": 0.9268292784690857
+        },
+        {
+          "positions": 42,
+          "max_abs_logit_diff": 3.576171875,
+          "mean_kl": 0.014189321547746658,
+          "max_kl": 0.16570867598056793,
+          "top1_agreement": 0.9285714030265808
+        },
+        {
+          "positions": 34,
+          "max_abs_logit_diff": 1.8125,
+          "mean_kl": 0.0017615959513932467,
+          "max_kl": 0.011452510952949524,
+          "top1_agreement": 0.970588207244873
+        },
+        {
+          "positions": 17,
+          "max_abs_logit_diff": 2.8359375,
+          "mean_kl": 0.013853853568434715,
+          "max_kl": 0.16030657291412354,
+          "top1_agreement": 0.9411764740943909
+        },
+        {
+          "positions": 57,
+          "max_abs_logit_diff": 4.125,
+          "mean_kl": 0.0021514680702239275,
+          "max_kl": 0.018848616629838943,
+          "top1_agreement": 0.9824561476707458
+        },
+        {
+          "positions": 37,
+          "max_abs_logit_diff": 1.59375,
+          "mean_kl": 0.0042320741340518,
+          "max_kl": 0.024047693237662315,
+          "top1_agreement": 0.9729729890823364
+        }
+      ],
+      "positions": 326,
+      "max_abs_logit_diff": 5.875,
+      "mean_kl": 0.009576838231428407,
+      "top1_agreement": 0.9662576672489658
+    },
+    "triton-invariant": {
+      "per_prompt": [
+        {
+          "positions": 35,
+          "max_abs_logit_diff": 1.5,
+          "mean_kl": 0.0036468105390667915,
+          "max_kl": 0.01369668822735548,
+          "top1_agreement": 0.9714285731315613
+        },
+        {
+          "positions": 63,
+          "max_abs_logit_diff": 4.25,
+          "mean_kl": 0.0007811952964402735,
+          "max_kl": 0.022812649607658386,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 41,
+          "max_abs_logit_diff": 4.375,
+          "mean_kl": 0.05136121064424515,
+          "max_kl": 0.43252769112586975,
+          "top1_agreement": 0.9024389982223511
+        },
+        {
+          "positions": 42,
+          "max_abs_logit_diff": 1.625,
+          "mean_kl": 0.0035503904800862074,
+          "max_kl": 0.01399783045053482,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 34,
+          "max_abs_logit_diff": 2.3984375,
+          "mean_kl": 0.0020190104842185974,
+          "max_kl": 0.026007432490587234,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 17,
+          "max_abs_logit_diff": 1.875,
+          "mean_kl": 0.003040175186470151,
+          "max_kl": 0.015167335979640484,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 57,
+          "max_abs_logit_diff": 2.0,
+          "mean_kl": 0.001742854481562972,
+          "max_kl": 0.02182624489068985,
+          "top1_agreement": 1.0
+        },
+        {
+          "positions": 37,
+          "max_abs_logit_diff": 2.375,
+          "mean_kl": 0.007062521297484636,
+          "max_kl": 0.056600190699100494,
+          "top1_agreement": 0.9729729890823364
+        }
+      ],
+      "positions": 326,
+      "max_abs_logit_diff": 4.375,
+      "mean_kl": 0.008934862077331879,
+      "top1_agreement": 0.9815950907446855
+    }
+  }
+}
