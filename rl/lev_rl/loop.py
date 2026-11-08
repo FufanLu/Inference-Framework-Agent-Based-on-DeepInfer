@@ -70,8 +70,14 @@ def render(tokenizer, problem: Problem, chat: bool) -> list[int]:
             enable_thinking=False,
             tokenize=True,
         )
-        return list(ids["input_ids"] if isinstance(ids, dict) else ids)
-    return tokenizer(problem.question)["input_ids"]
+        # transformers 5 returns a BatchEncoding (a mapping, not a dict); older
+        # versions a plain list. list() of the mapping gives its key names.
+        if not isinstance(ids, list):
+            ids = ids["input_ids"]
+    else:
+        ids = tokenizer(problem.question)["input_ids"]
+    ids = [int(t) for t in ids]
+    return ids
 
 
 def pad(rows: list[list], value, device) -> torch.Tensor:

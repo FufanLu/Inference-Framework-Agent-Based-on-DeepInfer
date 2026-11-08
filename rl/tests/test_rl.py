@@ -10,7 +10,7 @@ import torch
 
 
 from lev_rl.grpo import group_advantages, grpo_loss  # noqa: E402
-from lev_rl.loop import RLConfig, run  # noqa: E402
+from lev_rl.loop import RLConfig, render, run  # noqa: E402
 from lev_rl.task import make_problems, reward  # noqa: E402
 
 
@@ -53,3 +53,18 @@ def test_loop_runs_syncs_weights_and_measures_mismatch(tiny_qwen3, tmp_path):
     assert log[0]["rescore_vs_rollout_max_abs"] < 1e-9
     assert len((tmp_path / "metrics.jsonl").read_text().splitlines()) == 2
     json.loads((tmp_path / "config.json").read_text())
+
+
+def test_render_takes_input_ids_from_a_chat_template_mapping():
+    """transformers 5 returns a BatchEncoding (a UserDict); job 11715386 fed its key names to the engine."""
+    from collections import UserDict
+
+    class ChatTokenizer(CharTokenizer):
+        chat_template = "{{ messages }}"
+
+        def apply_chat_template(self, messages, **kwargs):
+            return UserDict({"input_ids": [7, 8, 9], "attention_mask": [1, 1, 1]})
+
+    (problem,) = make_problems(1, seed=0)
+    assert render(ChatTokenizer(), problem, chat=True) == [7, 8, 9]
+    assert all(isinstance(t, int) for t in render(CharTokenizer(), problem, chat=True))
