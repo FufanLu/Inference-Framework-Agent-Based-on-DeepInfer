@@ -1,0 +1,36 @@
+== d4054
+NVIDIA H200
+irdma0
+irdma1
+mlx5_0
+hca_id:	mlx5_0
+			state:			PORT_DOWN (1)
+			link_layer:		InfiniBand
+hca_id:	irdma0
+			state:			PORT_ACTIVE (4)
+			link_layer:		Ethernet
+hca_id:	irdma1
+			state:			PORT_DOWN (1)
+			link_layer:		Ethernet
+internal         UP             10.97.104.54/16 
+eno12409         DOWN           
+internal.2137@internal UP             10.99.104.54/16 
+ibp188s0         DOWN           
+== d4055
+NVIDIA H200
+irdma0
+irdma1
+mlx5_0
+hca_id:	mlx5_0
+			state:			PORT_DOWN (1)
+			link_layer:		InfiniBand
+hca_id:	irdma0
+			state:			PORT_ACTIVE (4)
+			link_layer:		Ethernet
+hca_id:	irdma1
+			state:			PORT_DOWN (1)
+			link_layer:		Ethernet
+internal         UP             10.97.104.55/16 
+eno12409         DOWN           
+internal.2137@internal UP             10.99.104.55/16 
+ibp188s0         DOWN           

@@ -106,7 +106,23 @@ NCCL picked `irdma0` for its IB transport and failed the first all-reduce: `NET/
 | all_to_all, bus | 1.23 GB/s | 333 GB/s | |
 | sendrecv | 1.24 GB/s | 371 GB/s | |
 
-1.23 GB/s is the 10 Gb/s line rate (1.25 GB/s). At that rate a TP2 decode step's 54 all-reduces of 512 KiB (batch 128) would take roughly 30 ms (a socket all-reduce took 0.32 ms at 256 KiB and 0.96 ms at 1 MiB), on top of the 40.6 ms step measured on one node. `engine_2node.sbatch` now runs the TP and EP steps over sockets, to measure that rather than estimate it.
+1.23 GB/s is the 10 Gb/s line rate (1.25 GB/s). At that rate a TP2 decode step's 54 all-reduces of 512 KiB (batch 128) take roughly 30 ms of transfer (a socket all-reduce took 0.32 ms at 256 KiB and 0.96 ms at 1 MiB). Job 11726646 (`LEV_STEPS=parallel-ep:parallel-tp`, the same nodes, `NCCL_IB_DISABLE=1`; `bench/results/engine-2node/11726646/`) measured TP2 and EP2 over the sockets:
+
+| decode step, p50 | 1 GPU | TP2, NVLink | TP2, 2 nodes | EP2, NVLink | EP2, 2 nodes |
+| --- | --- | --- | --- | --- | --- |
+| batch 2 | 28.1 ms | 33.1 ms | 36.3 ms | 42.0 ms | 44.9 ms |
+| batch 16 | 28.7 ms | 40.2 ms | 43.7 ms | 51.6 ms | 52.5 ms |
+| batch 64 | 28.9 ms | 40.3 ms | 44.7 ms | 51.6 ms | 53.8 ms |
+| batch 128 | 29.6 ms | 40.6 ms | **48.7 ms** | 51.5 ms | **208.1 ms** |
+| batch 128, output tok/s | 4 324 | 3 154 | 2 626 | 2 483 | 615 |
+
+Prefill across the nodes runs at 4.7 k tok/s with TP2 and 2.6–3.0 k with EP2, against 42–43 k on NVLink: a 1 024-token-per-rank prefill moves megabytes per layer, and there the 270× bandwidth gap shows. (The first prefill of each run also pays for NCCL opening its socket connections, 41 s for EP2, so these figures are from batch 16 up.)
+
+**TP2 lost only 8 ms of the 30 estimated.** The estimate added the transfers to the one-node step. The step is host-bound, though: the GPU already idles between Python's launches, and most of the socket transfers most likely ran in that idle time. Only at batch 128, where each all-reduce is largest, does the gap reach 8 ms.
+
+**EP2 holds until batch 64, then quadruples.** Through batch 64, EP2 across nodes is within 2.2 ms of EP2 on NVLink, because the per-layer host sync (`.tolist()`, above) dominates either way. At batch 128 the step jumps to 208 ms, and the profiled step spends 186 of its 203 ms of GPU time in NCCL kernels. The transfers alone do not explain it. Each rank sends about 0.8 MB per dispatch and per combine, so 26 layers take about 33 ms at line rate even if nothing overlaps. Something in the socket all-to-all costs more than bandwidth past that message size; this run did not profile further.
+
+The conclusion for this cluster: across two nodes, 10 GbE is enough for TP2's small all-reduces in decode but not for prefill or for EP's all-to-all at batch 128. Cross-node runs here need InfiniBand in service.
 
 ## Two bugs the run found
 

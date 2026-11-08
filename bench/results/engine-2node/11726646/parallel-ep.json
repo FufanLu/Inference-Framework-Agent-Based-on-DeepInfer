@@ -1,0 +1,67 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-08T06:10:23-0500",
+    "host": "d4054",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "mode": "ep",
+  "world_size": 2,
+  "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+  "results": [
+    {
+      "global_batch": 2,
+      "local_batch": 1,
+      "prompt": 512,
+      "prefill_ms": 40969.2109375,
+      "decode_step_ms_p50": 44.94489669799805,
+      "decode_tokens_per_s": 44.498934182422644,
+      "prefill_tokens_per_s": 24.994379353855475,
+      "gpu_time_us": 4320109.260999979,
+      "nccl_us": 4310656.280999998,
+      "nccl_share": 0.9978118655272636
+    },
+    {
+      "global_batch": 16,
+      "local_batch": 8,
+      "prompt": 512,
+      "prefill_ms": 3150.290771484375,
+      "decode_step_ms_p50": 52.47955322265625,
+      "decode_tokens_per_s": 304.88064431715753,
+      "prefill_tokens_per_s": 2600.394882323843,
+      "gpu_time_us": 27227.324999999924,
+      "nccl_us": 15559.62400000001,
+      "nccl_share": 0.5714709028521918
+    },
+    {
+      "global_batch": 64,
+      "local_batch": 32,
+      "prompt": 512,
+      "prefill_ms": 10973.65625,
+      "decode_step_ms_p50": 53.760032653808594,
+      "decode_tokens_per_s": 1190.4754673817326,
+      "prefill_tokens_per_s": 2986.0603661610053,
+      "gpu_time_us": 42759.92200000008,
+      "nccl_us": 28138.277000000002,
+      "nccl_share": 0.6580525801707484
+    },
+    {
+      "global_batch": 128,
+      "local_batch": 64,
+      "prompt": 512,
+      "prefill_ms": 24687.021484375,
+      "decode_step_ms_p50": 208.117919921875,
+      "decode_tokens_per_s": 615.0359375494896,
+      "prefill_tokens_per_s": 2654.674240125699,
+      "gpu_time_us": 202568.30399999954,
+      "nccl_us": 186182.99599999996,
+      "nccl_share": 0.9191121825258525
+    }
+  ]
+}
