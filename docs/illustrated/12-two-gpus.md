@@ -2,7 +2,7 @@
 
 > Code: `engine/lev_engine/parallel.py` (TP and EP), `bench/nccl/collectives.py`, `bench/engine/parallel.py`, `bench/engine/afd.py`
 > Tests: `engine/tests/test_parallel.py` (TP2 and EP2 against one process, gloo on CPU), CI job `engine`
-> Real data: `deploy/slurm/engine_2gpu.sbatch`, job 11707602, two H200s on node d4055 (raw JSON: `bench/results/engine-2gpu/11707602/`; AFD rows parsed from its log into `afd-partial.json`)
+> Real data: `deploy/slurm/engine_2gpu.sbatch`, job 11707602, two H200s on node d4055 (raw JSON: `bench/results/engine-2gpu/11707602/`; AFD rows parsed from its log into `afd-partial.json`); the AFD and serving steps rerun after two fixes in job 11721458 on node d4054 (`bench/results/engine-2gpu/11721458/`)
 > Previous: [11 Speculative decoding](11-speculative-decoding.md) · Next: [13 RL with lev-engine rollouts](13-rl-rollouts.md)
 
 DeepSeek-V2-Lite fits on one H200, so two GPUs here are not about memory. They are the smallest setup where every multi-GPU mechanism exists: NCCL collectives over NVLink, tensor parallelism (TP), expert parallelism with data-parallel attention (EP), and attention-FFN disaggregation (AFD). This chapter measures what each one costs before the 2-node job adds InfiniBand.
@@ -52,10 +52,12 @@ DeepSeek-V2-Lite on one GPU vs TP2 vs EP2, 512-token random prompts, decode step
 | 2 | 28.1 ms | 33.1 ms | 42.0 ms | – | – |
 | 16 | 28.7 ms | 40.2 ms | 51.6 ms | **19.8 ms** | 39.3 ms |
 | 64 | 28.9 ms | 40.3 ms | 51.6 ms | **22.2 ms** | 39.5 ms |
-| 128 | 29.6 ms | 40.6 ms | 51.5 ms | **24.5 ms** | deadlocked (below) |
+| 128 | 29.6 ms | 40.6 ms | 51.5 ms | **24.5 ms** | 39.9 ms (rerun; first run deadlocked, below) |
 | 128: output tok/s | 4 324 | 3 154 | 2 483 | **5 214** | |
 
-Prefill (64 and 128 prompts): 27.8 k tok/s on one GPU, 42–43 k with TP2 or EP2, 1.5× from two GPUs. AFD's prefill gives the same argmax as one GPU for every prompt (agreement 1.0).
+Prefill (64 and 128 prompts): 27.8 k tok/s on one GPU, 42–43 k with TP2 or EP2, 1.5× from two GPUs. AFD's prefill gives the same argmax as one GPU for every prompt (agreement 1.0), except batch 128 with two micro-batches in the rerun: 124 of 128 (0.969). These runs use the non-invariant kernels, and splitting the batch in two changes the GEMM shapes, so 4 near-tied argmaxes flip: chapter 10's invariance result seen from the other side.
+
+The rerun on another node (d4054) measured AFD with one micro-batch at 23.3, 23.5 and 25.8 ms (batches 16, 64, 128) against 19.8, 22.2 and 24.5 ms in the first run: 5–18 % run-to-run and node-to-node spread, still below one GPU at every batch size.
 
 ## What the decode numbers say
 
@@ -70,11 +72,27 @@ So on two GPUs, the parallelism that wins for this model is the one that splits 
 
 **The profiler's NCCL share is mostly waiting.** `bench/engine/parallel.py` records one decode step under `torch.profiler` and reports the NCCL kernels' share of GPU time. For TP2 it varied from 7 % to 69 % between batch sizes with no trend, and at batch 64 it reported 28.7 ms of NCCL in a step whose transfers need about 1 ms. An NCCL kernel spins on the GPU until the other rank's kernel arrives, so when two host-bound ranks launch out of step, the kernel's "time" is the skew between them. Collective time in a real step has to be read as transfer plus wait.
 
+## Serving on two workers
+
+The same gateway and router as chapters 01–09, with one lev worker per GPU (V2-Lite, Triton kernels, 60 GB of KV each) instead of sim or vLLM workers. `lev-bench`, agent workload with shared prefixes (8 agents, ~1 800-token prompts), 400 requests at concurrency 32, 64 output tokens, each policy in turn on the same two workers:
+
+| policy | errors | TTFT p50 | TTFT p90 | TTFT p99 | TPOT p50 | output tok/s | hit rate |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| round_robin (ran first) | 0/400 | 104 ms | 184 ms | 1 831 ms | 30.5 ms | 900 | 91.5 % |
+| least_load | 0/400 | 110 ms | 196 ms | 891 ms | 30.5 ms | 920 | 90.9 % |
+| p2c | 0/400 | 115 ms | 370 ms | 851 ms | 30.4 ms | 919 | 90.4 % |
+| cache_aware | 0/400 | 105 ms | **127 ms** | 861 ms | 30.4 ms | **934** | 91.1 % |
+
+- **The whole stack works on the engine.** 1 600 requests through the gateway (V2 chat template, tokenisation, routing on exact KV events from lev-engine's block hashes) to two lev workers and back, with no errors.
+- **Every policy reaches ~91 % hits.** Chapter 04 predicted this from the sim: with 8 agents and two replicas that each hold all 8 prefixes, every replica soon caches every prompt and the policies converge. Real hardware gives the same answer. cache_aware's edge is in the tail of the warm-up: TTFT p90 127 ms vs 184–370 ms, and the most output throughput (934 tok/s).
+- **p99 is the cold start, not the policy.** Each run has 19–24 requests with nothing cached, mostly among the first 32, prefilled together (several within a millisecond of each other: one shared step). round_robin ran first, on freshly started workers, so its 1.8 s p99 includes their warm-up and is not evidence against it.
+- **TPOT is 30.4 ms under every policy**, the eager engine's step time from the table above: decode is host-bound here too.
+
 ## Two bugs the run found
 
 **AFD deadlocked at 64 × 512 prefill rows.** Batch 128 with two micro-batches stopped in its prefill: both ranks waited 10 minutes in a `SEND` (sequence 9452, 67 M elements) until NCCL's watchdog aborted them. Both directions shared one communicator, and NCCL runs unbatched P2P operations of a communicator in issue order. Rank 0 had queued "send micro-batch B" before "receive A's FFN output"; rank 1 was in "send A's FFN output" before "receive B". Each send needs the other side's receive, which sits behind the other side's send. Batch 64 has the same issue order with 64 MiB messages and finished, so whether it hangs depends on message size and timing: a race, not a certain hang. The fix gives each direction its own communicator (`TO_FFN`, `TO_ATTN` in `afd.py`), so the two streams are ordered independently. The script also writes its results after every row now, so a failure keeps the rows before it.
 
-**The serving step never started.** The two lev workers were up 25 s after launch and the gateway logged both as connected, but `lev_wait_ready` waited out its 900 s. Explorer sets `http_proxy` for every job, so `curl http://127.0.0.1:8080/readyz` went to the cluster's Squid proxy, which answered with an "Access Denied" page. `common.sh` now exports `no_proxy=127.0.0.1,localhost` for every job. Both steps rerun with `LEV_STEPS=build:afd:serve-bench`.
+**The serving step never started.** The two lev workers were up 25 s after launch and the gateway logged both as connected, but `lev_wait_ready` waited out its 900 s. Explorer sets `http_proxy` for every job, so `curl http://127.0.0.1:8080/readyz` went to the cluster's Squid proxy, which answered with an "Access Denied" page. `common.sh` now exports `no_proxy=127.0.0.1,localhost` for every job. Both steps were rerun with `LEV_STEPS=build:afd:serve-bench` (job 11721458): batch 128 with two micro-batches completed (39.9 ms per step) and the serving bench ran. A third, smaller bug came first: the rerun's first submission passed `--export=ALL,LEV_STEPS=build,afd,serve-bench`, which sbatch splits at the commas, so only the build ran (job 11719063). The step list is now read from the environment and separated by colons.
 
 ## Why it is built this way
 

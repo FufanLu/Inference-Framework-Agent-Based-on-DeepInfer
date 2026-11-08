@@ -1,0 +1,114 @@
+# HELP lev_route_decisions_total Routing decisions by policy and plan.
+# TYPE lev_route_decisions_total counter
+lev_route_decisions_total{policy="round_robin",plan="unified"} 400
+lev_route_decisions_total{policy="least_load",plan="unified"} 400
+lev_route_decisions_total{policy="cache_aware",plan="unified"} 400
+lev_route_decisions_total{policy="p2c",plan="unified"} 400
+
+# HELP lev_spec_accepted_tokens_total Speculative draft tokens accepted.
+# TYPE lev_spec_accepted_tokens_total counter
+lev_spec_accepted_tokens_total{model="DeepSeek-V2-Lite-Chat"} 0
+
+# HELP lev_completion_tokens_total Output tokens by model and tenant.
+# TYPE lev_completion_tokens_total counter
+lev_completion_tokens_total{model="DeepSeek-V2-Lite-Chat",tenant="anonymous"} 100321
+
+# HELP lev_spec_draft_tokens_total Speculative draft tokens proposed.
+# TYPE lev_spec_draft_tokens_total counter
+lev_spec_draft_tokens_total{model="DeepSeek-V2-Lite-Chat"} 0
+
+# HELP lev_prompt_tokens_total Prompt tokens by model and tenant.
+# TYPE lev_prompt_tokens_total counter
+lev_prompt_tokens_total{model="DeepSeek-V2-Lite-Chat",tenant="anonymous"} 2901896
+
+# HELP lev_cached_tokens_total Prompt tokens served from the prefix cache.
+# TYPE lev_cached_tokens_total counter
+lev_cached_tokens_total{model="DeepSeek-V2-Lite-Chat",tenant="anonymous"} 2639776
+
+# HELP lev_requests_total Requests by protocol, model and outcome.
+# TYPE lev_requests_total counter
+lev_requests_total{protocol="chat_completions",model="DeepSeek-V2-Lite-Chat",outcome="ok"} 1600
+
+# HELP lev_worker_kv_usage Fraction of a worker's KV blocks in use.
+# TYPE lev_worker_kv_usage gauge
+lev_worker_kv_usage{worker="lev-0"} 0
+lev_worker_kv_usage{worker="lev-1"} 0
+
+# HELP lev_worker_decode_tokens_per_second Decode throughput of a worker.
+# TYPE lev_worker_decode_tokens_per_second gauge
+lev_worker_decode_tokens_per_second{worker="lev-1"} 59.184932708740234
+lev_worker_decode_tokens_per_second{worker="lev-0"} 21.295310974121094
+
+# HELP lev_worker_spec_accept_rate Speculative draft acceptance of a worker.
+# TYPE lev_worker_spec_accept_rate gauge
+lev_worker_spec_accept_rate{worker="lev-1"} 0
+lev_worker_spec_accept_rate{worker="lev-0"} 0
+
+# HELP lev_worker_waiting Sequences queued on a worker.
+# TYPE lev_worker_waiting gauge
+lev_worker_waiting{worker="lev-1"} 0
+lev_worker_waiting{worker="lev-0"} 0
+
+# HELP lev_worker_running Sequences running on a worker (its last report).
+# TYPE lev_worker_running gauge
+lev_worker_running{worker="lev-1"} 0
+lev_worker_running{worker="lev-0"} 0
+
+# HELP lev_ttft_seconds Time to first token, measured at the gateway.
+# TYPE lev_ttft_seconds histogram
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.005"} 0
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.01"} 0
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.025"} 0
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.05"} 115
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.1"} 1366
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.25"} 1463
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.5"} 1503
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="1"} 1564
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="2.5"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="5"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="10"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="30"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="60"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="120"} 1600
+lev_ttft_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="+Inf"} 1600
+lev_ttft_seconds_sum{model="DeepSeek-V2-Lite-Chat"} 223.24763929000005
+lev_ttft_seconds_count{model="DeepSeek-V2-Lite-Chat"} 1600
+
+# HELP lev_tpot_seconds Time per output token after the first.
+# TYPE lev_tpot_seconds histogram
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.001"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.0025"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.005"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.0075"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.01"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.015"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.02"} 0
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.03"} 10
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.05"} 1599
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.075"} 1599
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.1"} 1599
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.25"} 1600
+lev_tpot_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="+Inf"} 1600
+lev_tpot_seconds_sum{model="DeepSeek-V2-Lite-Chat"} 50.48396067699999
+lev_tpot_seconds_count{model="DeepSeek-V2-Lite-Chat"} 1600
+
+# HELP lev_e2e_seconds End-to-end request latency.
+# TYPE lev_e2e_seconds histogram
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.005"} 0
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.01"} 0
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.025"} 0
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.05"} 0
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.1"} 0
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.25"} 5
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="0.5"} 8
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="1"} 20
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="2.5"} 1475
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="5"} 1600
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="10"} 1600
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="30"} 1600
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="60"} 1600
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="120"} 1600
+lev_e2e_seconds_bucket{model="DeepSeek-V2-Lite-Chat",le="+Inf"} 1600
+lev_e2e_seconds_sum{model="DeepSeek-V2-Lite-Chat"} 3332.1817913730006
+lev_e2e_seconds_count{model="DeepSeek-V2-Lite-Chat"} 1600
+
