@@ -2,7 +2,7 @@
 
 > Code: `engine/lev_engine/speculative.py` (`verify`, `NgramProposer`, `DraftProposer`), `scheduler.py` (lookahead slots), `engine.py` (`_draft`, `_resolve`), `cuda_graph.py` (verify graphs)
 > Tests: `engine/tests/test_speculative.py`, `test_triton_kernels.py::test_speculation_is_bit_for_bit_plain_decoding_on_invariant_kernels`, `test_cuda_graph.py` (GPU)
-> Real data: traces from the tiny test checkpoints (below); H200 measurements from `deploy/slurm/spec_h200.sbatch` (pending, see the end)
+> Real data: traces from the tiny test checkpoints (below); H200 measurements from `deploy/slurm/spec_h200.sbatch`, job 11725168 (see the end)
 > Previous: [10 Leviathan's own engine](10-lev-engine.md) · Next: [12 Two GPUs](12-two-gpus.md)
 
 A decode step reads every weight and the whole KV context to produce one token per sequence; at small batch the GPU is waiting on memory, not arithmetic, so running 5 tokens per sequence through the same step costs little more than 1. Speculative decoding spends that slack: guess k tokens cheaply, run the target model on all of them in one step, keep the ones the target agrees with.
@@ -97,7 +97,7 @@ With CUDA graphs, verify steps replay graphs captured for k+1 tokens per sequenc
 
 **Two holes in batch invariance: one in the model, one in the test rig.** The bit-for-bit test passed in the local Linux image and failed on some CI runs by ~1e-8 in the logprobs, passing on others (GitHub's runners are not all the same CPU). The search found a real hole first: every GEMM went through the fixed-tile kernel except DeepSeekMoE's router, `h.float() @ gate.T`, a bare matmul on BLAS (cuBLAS on the GPU), free to change its reduction order with the batch shape; it now goes through `ops.linear`. The failures continued, so a whole-model test now traces every op for a sequence alone and in a batch and names the first that differs. On an AMD EPYC 9V74 runner it said: routing ids and weights equal, first difference in `moe_routed`, 3.5e-10. Under `TRITON_INTERPRET=1`, `tl.dot` is numpy's matmul on the host BLAS, and on that CPU a row's bits depend on its position in the 16-row expert tile, which moves with the batch (the same check on Explorer's Intel login node: identical for all 63 row shifts). The interpreter now computes dots as an in-order sum over K, and the tests pass on EPYC 9V74, 9V45 and 7763 runners. On the GPU the kernels use `tl.dot` as before, and the H200 job checks them bit for bit on real tensor cores. The same change makes every Triton kernel multiply fp32 inputs in IEEE fp32 instead of `tl.dot`'s default TF32.
 
-**Building a batch waited for the GPU.** `torch.tensor(values, device="cuda")` is a blocking copy, and PyTorch implements blocking host-to-device copies with a stream synchronisation, so every `ForwardBatch.build` waited for all queued kernels. That defeats overlapped scheduling (chapter 10) and would have serialised the draft loop. Batches are now copied with `non_blocking=True` from pageable memory, which the CUDA driver stages without waiting on the device. What this changes on the H200 is measured, not assumed: the first H200 job ran before the change.
+**Building a batch waited for the GPU.** `torch.tensor(values, device="cuda")` is a blocking copy, and PyTorch implements blocking host-to-device copies with a stream synchronisation, so every `ForwardBatch.build` waited for all queued kernels. That defeats overlapped scheduling (chapter 10) and would have serialised the draft loop. Batches are now copied with `non_blocking=True` from pageable memory, which the CUDA driver stages without waiting on the device. What this changes on the H200 is measured, not assumed: the first H200 job ran before the change. With the fix, overlapped scheduling still gained nothing measurable on the H200, because scheduling is only 4 % of a run (see the end).
 
 ## Correctness
 
@@ -113,7 +113,68 @@ On the reference kernels the logprobs agree to 1e-9, not bitwise: verify batches
 
 ## Measured on H200
 
-Pending: `deploy/slurm/spec_h200.sbatch` runs n-gram lookup on DeepSeek-V2-Lite-Chat and Qwen3-8B with a Qwen3-0.6B draft (coupled and greedy) on two real-text workloads (code edits from this repository; open questions) at batch 1, 8 and 32, temperature 0 and 1, and checks every run against plain decoding on the same kernels. The tables go here when it has run.
+Job 11725168 (`deploy/slurm/spec_h200.sbatch`, one H200 on node d4054, CUDA graphs on; raw JSON: `bench/results/spec-h200/11725168/`). k = 4 drafts per step, 256 output tokens. Two workloads of real text: **edit** (a file from this repository and an instruction to return it complete with one change; 413–954 prompt tokens) and **chat** (open questions; 15–29 prompt tokens). Every run is compared with plain decoding on the same kernels, request by request. The GPU tests (speculation, CUDA graphs, Triton kernels compiled on the H200): 20 passed.
+
+### Exact, on invariant kernels
+
+Batch 8, batch-invariant kernels, output tok/s and speedup over plain decoding:
+
+| model | workload, T | plain | n-gram | draft model (Qwen3-0.6B, coupled) | greedy draft |
+| --- | --- | --- | --- | --- | --- |
+| DeepSeek-V2-Lite | edit, 0 | 347 | **1 056 (3.0×)**, 88 % accepted | – | – |
+| | edit, 1 | 344 | 453 (1.3×), 52 % | – | – |
+| | chat, 0 | 341 | 291 (0.85×), 2 % | – | – |
+| Qwen3-8B | edit, 0 | 440 | **971 (2.2×)**, 70 % | 551 (1.25×), 90 % | – |
+| | edit, 1 | 440 | **1 068 (2.4×)**, 72 % | 581 (1.3×), 90 % | 599 (1.4×), 92 % |
+| | chat, 0 | 466 | 443 (0.95×), 2 % | 354 (0.76×), 40 % | – |
+| | chat, 1 | 467 | 437 (0.94×), 1 % | 338 (0.72×), 35 % | 335 (0.72×), 36 % |
+
+In all 14 speculative runs on invariant kernels, every request's tokens **and logprobs** are identical to plain decoding, bit for bit, at temperature 0 and 1. That is the claim of this chapter checked on real models and real tensor cores.
+
+### What happens without invariance
+
+The same runs on the fast kernels (cuBLAS GEMMs), share of requests whose tokens equal plain decoding at **temperature 0**:
+
+| model | batch 1 | batch 8 | batch 32 |
+| --- | --- | --- | --- |
+| DeepSeek-V2-Lite, n-gram (edit / chat) | 100 % / **0 %** | 100 % / 25 % | 62 % / 6 % |
+| Qwen3-8B, n-gram / draft (edit) | 100 % / 100 % | 100 % / 88 % | 81 % / 88 % |
+| Qwen3-8B, n-gram / draft (chat) | 100 % / 100 % | 38 % / 38 % | 19 % / 19 % |
+
+Greedy decoding with speculation is supposed to return the same text. It does not here, because a verify step computes k + 1 rows per sequence where a decode step computes one, and on shape-dependent kernels a near-tie in the argmax flips. For V2-Lite this happens even for a single chat request. No logprob in any of the V2-Lite runs matched plain decoding exactly.
+
+### Where speculation pays
+
+The fastest path (non-invariant kernels) on Qwen3-8B, edit workload:
+
+| batch | plain | n-gram | draft model |
+| --- | --- | --- | --- |
+| 1 | 115 tok/s | **502 (4.4×)**, 94 % accepted, 4.7 tokens per verify | 141 (1.2×), 99.5 % accepted |
+| 8 | 812 | **1 840 (2.3×)** | 783 (0.96×) |
+| 32 | 2 301 | **3 356 (1.5×)** | 2 106 (0.92×) |
+
+- **N-gram lookup wins on copy-heavy output and loses a little on everything else.** On edits at temperature 0 it accepts 54–94 % and gives 1.4–4.4×. On chat, nothing in the prompt predicts the answer (1–4 % accepted): from 5 % faster (Qwen3-8B, batch 1) to 30 % slower (Qwen3-8B, batch 32), as the wasted verify rows start to cost GPU time.
+- **The draft model is accepted more and is faster less.** At batch 1 it is accepted 99.5 % of the time on edits, yet gives 1.2× where n-gram gives 4.4×. A verify step took 34 ms: four 0.6B forward passes and one 8B pass. Plain 8B decoding takes 8.7 ms per token, so one 0.6B pass costs at most about 6.4 ms, up to 74 % of an 8B pass, for 7 % of the parameters. At small batch a step's cost is mostly fixed per-step work, not FLOPs (chapter 10's graph numbers below say the same), so a small draft model is not much cheaper than the target.
+- **The speedup shrinks with batch.** At batch 32 the GPU has work to do on every step, so verify rows are no longer free: n-gram falls from 4.4× to 1.5×, and the draft model costs more than it saves.
+
+### Shared noise on real models
+
+On the tiny checkpoints, drafting with the target's noise was accepted 20 of 24 times where greedy drafting got 0 of 92. On Qwen3-0.6B drafting for Qwen3-8B at temperature 1 there is no difference: 90 % vs 92 % on edits, 35 % vs 36 % on chat. A greedy draft d is accepted with probability p(d), and real models are confident on most tokens, so p(argmax q) is high. The coupling's advantage needs flat distributions, as in the near-uniform tiny models (largest probability 0.005). The coupled draft is still the one to use: it is never worse here, and it keeps output independent of the draft's sampling.
+
+### CUDA graphs and overlap (chapter 10's open question)
+
+The same throughput workloads as chapter 10 (512 prompt, 256 output tokens, DeepSeek-V2-Lite), now with CUDA graphs:
+
+| engine | 1 request: ms/token | 1 request: tok/s | 256 requests: tok/s |
+| --- | --- | --- | --- |
+| lev Triton, eager (job 11707247) | 27.9 | 35.8 | 4 666 |
+| lev Triton, CUDA graphs | **9.5** | **104** | **5 336** |
+| lev Triton, CUDA graphs + overlapped scheduling | 9.5 | 103 | 5 299 |
+| lev Triton invariant, eager | 26.9 | 37.2 | 4 168 |
+| lev Triton invariant, CUDA graphs | 17.0 | 58.4 | 4 435 |
+| vLLM 0.31.0 | – | 318 | 11 709 |
+
+Graphs cut a single request's step from 27.9 to 9.5 ms: two thirds of the eager step was launching kernels from Python, as chapter 10 expected. With that removed, the invariant kernels' own cost shows: 17.0 vs 9.5 ms at batch 1 (fixed tiles, no split-KV), where in eager mode both were hidden under the launch overhead. At batch 256 the GPU was already busy, so graphs add 14 % (6 % invariant). Overlapped scheduling adds nothing measurable: scheduling is 0.48 s of a 12.4 s run (4 %), so there is little to hide. vLLM remains 3.0× faster at batch 1 and 2.2× at batch 256.
 
 ## Why it is built this way
 
@@ -123,4 +184,4 @@ Pending: `deploy/slurm/spec_h200.sbatch` runs n-gram lookup on DeepSeek-V2-Lite-
 
 **Why let the draft share the target's block tables?** A second allocator would have to agree with the first on every admission, preemption and eviction. Sharing the tables makes the draft cache a function of the target's, so the only state to keep is one counter per sequence, and every mistake in it is a performance bug, never a correctness bug.
 
-**Why n-gram lookup at all, with a draft model available?** It costs no GPU memory and no extra forward passes, and the traffic Leviathan is built for copies a lot: agents re-quote tool output, code edits return most of the file. The H200 runs measure where each wins.
+**Why n-gram lookup at all, with a draft model available?** It costs no GPU memory and no extra forward passes, and the traffic Leviathan is built for copies a lot: agents re-quote tool output, code edits return most of the file. The H200 run settled it: on edits n-gram lookup is 4.4× at batch 1 against the draft model's 1.2×, because at small batch a 0.6B forward pass costs up to 74 % of an 8B one.

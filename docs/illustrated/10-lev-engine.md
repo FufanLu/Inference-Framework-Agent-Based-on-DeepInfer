@@ -167,7 +167,7 @@ Offline throughput, random token-ID prompts (no prefix reuse), 512 prompt and 25
 | lev, Triton batch-invariant | 4 168 | 37.2 | 26.9 |
 | lev, PyTorch reference | 192 | 27.8 | 35.7 |
 
-At batch 256, invariance costs 11 % of lev's throughput (4 168 vs 4 666), and lev reaches 40 % of vLLM. At batch 1 the gap is 9×. This run had CUDA graphs and overlapped scheduling off (both exist in the engine, see `cuda_graph.py`). A single sequence's step launches the kernels of 27 layers one by one from Python, so 28 ms per token is likely launch overhead rather than GPU time. That is an expectation, not a measurement yet: `spec_h200.sbatch` reruns the same workloads with graphs and overlap on.
+At batch 256, invariance costs 11 % of lev's throughput (4 168 vs 4 666), and lev reaches 40 % of vLLM. At batch 1 the gap is 9×. This run had CUDA graphs and overlapped scheduling off (both exist in the engine, see `cuda_graph.py`). A single sequence's step launches the kernels of 27 layers one by one from Python, so 28 ms per token is likely launch overhead rather than GPU time. Measured since (job 11725168, chapter 11): with CUDA graphs a single request's step drops from 27.9 to 9.5 ms (104 tok/s) and batch 256 rises to 5 336 tok/s, so two thirds of the eager step was launch overhead. With graphs, invariance costs more at batch 1 (17.0 vs 9.5 ms: fixed tiles and no split-KV are no longer hidden) and 17 % at batch 256 (4 435 vs 5 336). Overlapped scheduling adds nothing measurable. vLLM stays 3.0× ahead at batch 1 and 2.2× at batch 256.
 
 Logits parity with transformers (bf16 on both sides, 8 prompts, 326 positions):
 

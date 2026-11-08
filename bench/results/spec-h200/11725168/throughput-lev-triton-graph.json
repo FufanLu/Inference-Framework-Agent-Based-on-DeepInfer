@@ -1,0 +1,44 @@
+{
+  "environment": {
+    "python": "3.12.16",
+    "torch": "2.13.0+cu129",
+    "cuda": "12.9",
+    "time": "2026-11-08T02:45:49-0500",
+    "host": "d4054",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_gib": 139.8,
+    "sm": "90",
+    "triton": "3.7.1",
+    "vllm": "0.31.0"
+  },
+  "engine": "lev:triton+graph",
+  "model": "/scratch/lu.fu/hf/models/DeepSeek-V2-Lite-Chat",
+  "workloads": {
+    "batch-256x512x256": {
+      "requests": 256,
+      "prompt_tokens": 512,
+      "output_tokens": 256,
+      "wall_s": 12.281375676975586,
+      "output_tokens_per_s": 5336.210024326762,
+      "total_tokens_per_s": 16008.630072980288,
+      "steps": 272,
+      "schedule_s": 0.4589733077445999,
+      "forward_and_sample_s": 11.81309394852724,
+      "time_to_first_token_s": 0.3049708170001395,
+      "decode_ms_per_token": null
+    },
+    "single-1x512x256": {
+      "requests": 1,
+      "prompt_tokens": 512,
+      "output_tokens": 256,
+      "wall_s": 2.450678822991904,
+      "output_tokens_per_s": 104.46085288624772,
+      "total_tokens_per_s": 313.38255865874316,
+      "steps": 256,
+      "schedule_s": 0.021894222241826355,
+      "forward_and_sample_s": 2.426990370673593,
+      "time_to_first_token_s": 0.03175956598715857,
+      "decode_ms_per_token": 9.485957870606844
+    }
+  }
+}

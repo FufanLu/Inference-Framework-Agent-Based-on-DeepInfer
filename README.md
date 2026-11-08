@@ -164,6 +164,8 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
 9. [Bursts, Kafka and admission control](docs/illustrated/09-bursts-and-kafka.md): the burst experiment, the Pareto curve, failover with a killed gateway
 10. [Leviathan's own engine](docs/illustrated/10-lev-engine.md): the MLA latent cache, chunked prefill and preemption traced step by step, batch invariance
 11. [Speculative decoding](docs/illustrated/11-speculative-decoding.md): drafts decide how many tokens a step confirms, never which; shared-noise drafting; a prefix-cache bug it exposed
+12. [Two GPUs](docs/illustrated/12-two-gpus.md): NCCL over NVLink and 10 GbE, TP2 vs EP2 vs AFD when decode is host-bound, the full stack on two lev workers
+13. [RL with lev-engine rollouts](docs/illustrated/13-rl-rollouts.md): GRPO on Qwen3-1.7B; invariant kernels make rollouts re-scorable bit for bit, but not the trainer's numbers
 
 ## Roadmap
 
@@ -185,10 +187,10 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] DeepSeek-V2 (absorbed MLA, DeepSeekMoE) and Qwen3; paged cache, prefix cache in the router's hashes, chunked prefill, priorities, preemption; worker backend; DeepSeek-V2 chat template in the gateway
   - [x] batch-invariant Triton kernels (GEMM, MLA and GQA attention, grouped MoE, RMSNorm) and seeded Gumbel-max sampling
   - [x] tensor and expert parallelism (TP2 / EP2 with DP attention), checked against one process
-  - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 run (`spec_h200.sbatch`) queued fourth, after the 2-node job
+  - [x] speculative decoding: n-gram and draft-model proposers, verification that keeps plain decoding's output (bit for bit on invariant kernels), verify CUDA graphs; H200 (job 11725168): on invariant kernels all 14 speculative runs give plain decoding's tokens and logprobs bit for bit (cuBLAS: greedy tokens differ even at batch 1); n-gram lookup 4.4× on code edits at batch 1 vs the 0.6B draft model's 1.2×
   - [x] H200, one GPU (job 11707247): with batch-invariant kernels a request's 128 logprobs are bit-equal alone and next to 64 others (cuBLAS: tokens diverge with one neighbour); 4 168 vs vLLM's 11 709 output tok/s at batch 256, eager; invariance costs 11 %
   - [x] H200, two GPUs (job 11707602): NVLink all-reduce 330 GB/s (NCCL's defaults within 4 % of the best knob); eager decode is host-bound (29.6 ms per step at batch 2 or 128), so TP2 (+11 ms) and EP2 (+22 ms, a host sync per MoE layer) lose to one GPU, and AFD, which splits the launches over two processes, wins (5 214 vs 4 324 tok/s); an AFD deadlock and a proxy bug fixed; gateway + router + two lev workers served 1 600 requests with no errors, ~91 % cache hits under every policy; across two nodes only 10 GbE is up (InfiniBand ports down, NCCL's IB transport fails on the RoCE NIC), sockets give 1.23 GB/s
-  - [ ] CUDA graphs and overlapped scheduling
+  - [x] CUDA graphs and overlapped scheduling, H200 (job 11725168): graphs take a single request from 27.9 to 9.5 ms per token and batch 256 from 4 666 to 5 336 tok/s; overlap adds nothing measurable (scheduling is 4 % of a run)
 - [x] P8 RL: GRPO loop with weight sync and mismatch metrics; H200, Qwen3-1.7B (job 11717781): reward 0.82 → 0.91 in 30 steps; with batch-invariant kernels the engine's rescore of its own rollouts is bit-equal for 100 % of tokens (cuBLAS: 4.4 %), while the gap to the transformers trainer stays 0.006 either way
 
 ## Development
