@@ -3,7 +3,7 @@
 > Code: `engine/lev_engine/parallel.py` (TP and EP), `bench/nccl/collectives.py`, `bench/engine/parallel.py`, `bench/engine/afd.py`
 > Tests: `engine/tests/test_parallel.py` (TP2 and EP2 against one process, gloo on CPU), CI job `engine`
 > Real data: `deploy/slurm/engine_2gpu.sbatch`, job 11707602, two H200s on node d4055 (raw JSON: `bench/results/engine-2gpu/11707602/`; AFD rows parsed from its log into `afd-partial.json`)
-> Previous: [11 Speculative decoding](11-speculative-decoding.md)
+> Previous: [11 Speculative decoding](11-speculative-decoding.md) · Next: [13 RL with lev-engine rollouts](13-rl-rollouts.md)
 
 DeepSeek-V2-Lite fits on one H200, so two GPUs here are not about memory. They are the smallest setup where every multi-GPU mechanism exists: NCCL collectives over NVLink, tensor parallelism (TP), expert parallelism with data-parallel attention (EP), and attention-FFN disaggregation (AFD). This chapter measures what each one costs before the 2-node job adds InfiniBand.
 

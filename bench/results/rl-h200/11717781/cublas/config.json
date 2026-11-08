@@ -1,0 +1,20 @@
+{
+  "model": "/scratch/lu.fu/hf/models/Qwen3-1.7B",
+  "out": "../bench/results/rl-h200/11717781/cublas",
+  "steps": 30,
+  "prompts_per_step": 16,
+  "group_size": 8,
+  "max_new_tokens": 256,
+  "lr": 1e-06,
+  "micro_batch": 16,
+  "clip_eps": 0.2,
+  "tis_cap": 2.0,
+  "seed": 0,
+  "device": "cuda",
+  "engine_dtype": "bfloat16",
+  "kernel_backend": "triton",
+  "batch_invariant": false,
+  "digits": 2,
+  "chat_template": true,
+  "rescore": true
+}

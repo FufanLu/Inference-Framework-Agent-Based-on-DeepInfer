@@ -189,7 +189,7 @@ docs/                  illustrated walkthrough, DeepInfer status, planning notes
   - [x] H200, one GPU (job 11707247): with batch-invariant kernels a request's 128 logprobs are bit-equal alone and next to 64 others (cuBLAS: tokens diverge with one neighbour); 4 168 vs vLLM's 11 709 output tok/s at batch 256, eager; invariance costs 11 %
   - [x] H200, two GPUs (job 11707602): NVLink all-reduce 330 GB/s (NCCL's defaults within 4 % of the best knob); eager decode is host-bound (29.6 ms per step at batch 2 or 128), so TP2 (+11 ms) and EP2 (+22 ms, a host sync per MoE layer) lose to one GPU, and AFD, which splits the launches over two processes, wins (5 214 vs 4 324 tok/s); an AFD deadlock and a proxy bug fixed, serving bench rerun pending
   - [ ] CUDA graphs and overlapped scheduling
-- [ ] P8 RL: GRPO loop with weight sync and mismatch metrics (CPU-tested), H200 run pending
+- [x] P8 RL: GRPO loop with weight sync and mismatch metrics; H200, Qwen3-1.7B (job 11717781): reward 0.82 → 0.91 in 30 steps; with batch-invariant kernels the engine's rescore of its own rollouts is bit-equal for 100 % of tokens (cuBLAS: 4.4 %), while the gap to the transformers trainer stays 0.006 either way
 
 ## Development
 
