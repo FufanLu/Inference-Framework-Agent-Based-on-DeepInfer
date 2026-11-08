@@ -10,8 +10,10 @@
 # Two H200s on one node (NVLink): NCCL collectives and their tuning knobs,
 # then DeepSeek-V2-Lite on one GPU vs TP2 vs EP2 (DP attention) vs AFD.
 #   sbatch deploy/slurm/engine_2gpu.sbatch
-# Rerun some steps only (comma-separated names; build is needed for serve-bench):
-#   sbatch --export=ALL,LEV_STEPS=build,afd,serve-bench deploy/slurm/engine_2gpu.sbatch
+# Rerun some steps only (names separated by commas, colons or spaces; build is
+# needed for serve-bench). Set it in the environment: sbatch's --export splits
+# on commas, so --export=ALL,LEV_STEPS=a,b passes only "a" (job 11719063).
+#   LEV_STEPS=build:afd:serve-bench sbatch deploy/slurm/engine_2gpu.sbatch
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
 lev_gpu_preflight
@@ -29,7 +31,8 @@ mkdir -p "$OUT" logs
 } > "$OUT/topology.txt" 2>&1
 cat "$OUT/topology.txt"
 
-wanted() { [[ -z "${LEV_STEPS:-}" || ",$LEV_STEPS," == *",$1,"* ]]; }
+wanted() { local all=" ${LEV_STEPS//[,:]/ } "; [[ -z "${LEV_STEPS:-}" || "$all" == *" $1 "* ]]; }
+[[ -n "${LEV_STEPS:-}" ]] && echo "steps: $LEV_STEPS"
 step() {
     local name="$1" limit="$2"
     shift 2
