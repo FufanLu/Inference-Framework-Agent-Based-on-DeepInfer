@@ -187,7 +187,7 @@ docs/                  图解文档（英文）、DeepInfer 状态说明、规�
   - [x] 张量并行与专家并行（TP2 / EP2 + DP 注意力），已与单进程结果对齐
   - [x] 投机解码：n-gram 与 draft 模型两种 proposer，验证规则保证输出与逐个解码一致（invariant 算子下逐位一致），verify 步的 CUDA Graph；H200 作业（`spec_h200.sbatch`）排在第四个，2 节点作业之后
   - [x] 单卡 H200 实测（作业 11707247）：用 batch-invariant 算子时，一个请求单独跑和夹在 64 个请求中间跑，128 个 logprob 逐位相等（cuBLAS 下只要多一个请求，token 就会分歧）；batch 256 时输出 4 168 tok/s，vLLM 为 11 709（未开 CUDA Graph）；invariance 带来 11% 的吞吐损失
-  - [x] 双卡 H200（作业 11707602）：NVLink all-reduce 330 GB/s（NCCL 默认配置与最优参数只差 4%）；eager 模式下 decode 受主机端限制（batch 2 和 128 都是每步约 29 ms），所以 TP2（+11 ms）和 EP2（+22 ms，每个 MoE 层一次主机同步）都比单卡慢，而把 kernel 下发分到两个进程的 AFD 更快（5 214 vs 4 324 tok/s）；修了 AFD 死锁和代理问题；网关 + 路由 + 两个 lev worker 处理了 1 600 个请求、零错误，四种策略的缓存命中率都约 91%
+  - [x] 双卡 H200（作业 11707602）：NVLink all-reduce 330 GB/s（NCCL 默认配置与最优参数只差 4%）；eager 模式下 decode 受主机端限制（batch 2 和 128 都是每步约 29 ms），所以 TP2（+11 ms）和 EP2（+22 ms，每个 MoE 层一次主机同步）都比单卡慢，而把 kernel 下发分到两个进程的 AFD 更快（5 214 vs 4 324 tok/s）；修了 AFD 死锁和代理问题；网关 + 路由 + 两个 lev worker 处理了 1 600 个请求、零错误，四种策略的缓存命中率都约 91%；跨两个节点只有 10 GbE 可用（InfiniBand 端口 down，NCCL 的 IB 传输在 RoCE 网卡上报错），走 socket 只有 1.23 GB/s
   - [ ] CUDA Graph 与重叠调度
 - [x] P8 RL：GRPO 闭环（含权重同步与训推差异指标）；H200 上 Qwen3-1.7B（作业 11717781）：30 步内 reward 从 0.82 升到 0.91；用 batch-invariant kernel 时，引擎重算自己 rollout 的 logprob 100% 逐位相等（cuBLAS 只有 4.4%），但和 transformers trainer 的差距两种情况都是 0.006
 

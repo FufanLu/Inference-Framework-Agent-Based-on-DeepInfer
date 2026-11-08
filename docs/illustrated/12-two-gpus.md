@@ -88,6 +88,26 @@ The same gateway and router as chapters 01–09, with one lev worker per GPU (V2
 - **p99 is the cold start, not the policy.** Each run has 19–24 requests with nothing cached, mostly among the first 32, prefilled together (several within a millisecond of each other: one shared step). round_robin ran first, on freshly started workers, so its 1.8 s p99 includes their warm-up and is not evidence against it.
 - **TPOT is 30.4 ms under every policy**, the eager engine's step time from the table above: decode is host-bound here too.
 
+## Across two nodes
+
+Job 11722469 (`deploy/slurm/engine_2node.sbatch`, nodes d4054 and d4055, one H200 each; `bench/results/engine-2node/11722469/`) was meant to repeat the collectives and TP2/EP2 over InfiniBand. The nodes do not have it in service:
+
+```
+d4054, d4055   mlx5_0   InfiniBand  PORT_DOWN      (ibp188s0 DOWN)
+               irdma0   Ethernet    PORT_ACTIVE    10 Gb/s RoCE (Intel), the only active RDMA device
+               irdma1   Ethernet    PORT_DOWN
+```
+
+NCCL picked `irdma0` for its IB transport and failed the first all-reduce: `NET/IB: ncclIbCompletionEventProcess: Unknown completion (... wc.opcode=IBV_WC_RECV(128) ...)`, an internal error in NCCL 2.29.7 with this RoCE provider (it logged `provider=None`). The TP and EP steps used the same default and failed the same way. With `NCCL_IB_DISABLE=1` (TCP sockets over the `internal` interface) the collectives run:
+
+| op, 1 GiB | 2 nodes, sockets | 1 node, NVLink | |
+| --- | --- | --- | --- |
+| all_reduce, bus | 1.23 GB/s | 330 GB/s | 270× |
+| all_to_all, bus | 1.23 GB/s | 333 GB/s | |
+| sendrecv | 1.24 GB/s | 371 GB/s | |
+
+1.23 GB/s is the 10 Gb/s line rate (1.25 GB/s). At that rate a TP2 decode step's 54 all-reduces of 512 KiB (batch 128) would take roughly 30 ms (a socket all-reduce took 0.32 ms at 256 KiB and 0.96 ms at 1 MiB), on top of the 40.6 ms step measured on one node. `engine_2node.sbatch` now runs the TP and EP steps over sockets, to measure that rather than estimate it.
+
 ## Two bugs the run found
 
 **AFD deadlocked at 64 × 512 prefill rows.** Batch 128 with two micro-batches stopped in its prefill: both ranks waited 10 minutes in a `SEND` (sequence 9452, 67 M elements) until NCCL's watchdog aborted them. Both directions shared one communicator, and NCCL runs unbatched P2P operations of a communicator in issue order. Rank 0 had queued "send micro-batch B" before "receive A's FFN output"; rank 1 was in "send A's FFN output" before "receive B". Each send needs the other side's receive, which sits behind the other side's send. Batch 64 has the same issue order with 64 MiB messages and finished, so whether it hangs depends on message size and timing: a race, not a certain hang. The fix gives each direction its own communicator (`TO_FFN`, `TO_ATTN` in `afd.py`), so the two streams are ordered independently. The script also writes its results after every row now, so a failure keeps the rows before it.

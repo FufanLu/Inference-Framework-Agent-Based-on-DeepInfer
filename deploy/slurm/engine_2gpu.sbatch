@@ -31,12 +31,11 @@ mkdir -p "$OUT" logs
 } > "$OUT/topology.txt" 2>&1
 cat "$OUT/topology.txt"
 
-wanted() { local all=" ${LEV_STEPS//[,:]/ } "; [[ -z "${LEV_STEPS:-}" || "$all" == *" $1 "* ]]; }
 [[ -n "${LEV_STEPS:-}" ]] && echo "steps: $LEV_STEPS"
 step() {
     local name="$1" limit="$2"
     shift 2
-    wanted "$name" || return 0
+    lev_wanted "$name" || return 0
     echo "== $name  $(date +%T)"
     timeout "$limit" "$@" > "$OUT/$name.log" 2>&1
     local rc=$?
@@ -88,7 +87,7 @@ endpoint = "http://127.0.0.1:51061"
 endpoint = "http://127.0.0.1:51062"
 TOML
 LEV_CFG='{"device":"cuda","dtype":"bfloat16","kernel_backend":"triton","block_size":16,"kv_cache_memory_bytes":60000000000,"max_model_len":8192,"max_num_batched_tokens":8192,"max_num_seqs":128}'
-if wanted serve-bench; then
+if lev_wanted serve-bench; then
     for i in 0 1; do
         (cd worker && CUDA_VISIBLE_DEVICES=$i PYTHONPATH=.:../engine python -m leviathan_worker.server --backend lev \
             --lev-model "$MODEL" --lev-config "$LEV_CFG" --model DeepSeek-V2-Lite-Chat --host 127.0.0.1 \

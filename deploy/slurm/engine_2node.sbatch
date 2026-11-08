@@ -12,6 +12,11 @@
 # now across the network, and EP2 (whose all_to_all crosses it every MoE
 # layer). QoS allows it: gpu-short caps GPUs per job (2), not nodes.
 #   sbatch deploy/slurm/engine_2node.sbatch
+#   LEV_STEPS=parallel-ep:parallel-tp sbatch deploy/slurm/engine_2node.sbatch
+# Explorer's H200 nodes have their InfiniBand port (mlx5_0) down; the only
+# active RDMA device is a 10 GbE RoCE NIC (irdma0), on which NCCL 2.29.7's IB
+# transport fails its first all-reduce ("Unknown completion", job 11722469).
+# The model steps therefore run over NCCL's socket transport.
 source "${SLURM_SUBMIT_DIR:-.}/deploy/slurm/common.sh"
 lev_activate
 lev_gpu_preflight all
@@ -31,6 +36,7 @@ cat "$OUT/network.txt"
 step() {
     local name="$1" limit="$2" vars="$3"
     shift 3
+    lev_wanted "$name" || return 0
     echo "== $name  $(date +%T)"
     # shellcheck disable=SC2086 # $vars is a list of assignments
     timeout "$limit" env $vars srun --export=ALL --ntasks-per-node=1 torchrun --nnodes 2 --nproc-per-node 1 \
@@ -44,7 +50,8 @@ step() {
 
 step nccl-default 900 "NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH" bench/nccl/collectives.py --out "$OUT/nccl-default.json"
 step nccl-socket 900 "NCCL_IB_DISABLE=1" bench/nccl/collectives.py --ops all_reduce all_to_all sendrecv --out "$OUT/nccl-socket.json"
-step parallel-ep 1800 "" bench/engine/parallel.py --mode ep --model "$MODEL" --out "$OUT/parallel-ep.json"
-step parallel-tp 1800 "" bench/engine/parallel.py --mode tp --model "$MODEL" --out "$OUT/parallel-tp.json"
+[[ -n "${LEV_STEPS:-}" ]] && echo "steps: $LEV_STEPS"
+step parallel-ep 1800 "NCCL_IB_DISABLE=1" bench/engine/parallel.py --mode ep --model "$MODEL" --out "$OUT/parallel-ep.json"
+step parallel-tp 1800 "NCCL_IB_DISABLE=1" bench/engine/parallel.py --mode tp --model "$MODEL" --out "$OUT/parallel-tp.json"
 echo "done $(date +%T)"
 cat "$OUT/steps.txt"

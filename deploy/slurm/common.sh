@@ -45,6 +45,14 @@ lev_vllm_args() {
 --language-model-only --max-model-len ${MAX_MODEL_LEN:-131072} ${extra}"
 }
 
+# Is step $1 selected? LEV_STEPS lists step names separated by commas, colons
+# or spaces; unset means every step. Set it in the environment, not with
+# sbatch --export=ALL,LEV_STEPS=a,b (sbatch splits that at the commas).
+lev_wanted() {
+    local all=" ${LEV_STEPS//[,:]/ } "
+    [[ -z "${LEV_STEPS:-}" || "$all" == *" $1 "* ]]
+}
+
 lev_wait_ready() {
     # Wait until the gateway reports N healthy workers.
     local want="$1" timeout="${2:-3600}" start

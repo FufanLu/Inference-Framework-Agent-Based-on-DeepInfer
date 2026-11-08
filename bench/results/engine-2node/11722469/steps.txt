@@ -1,0 +1,4 @@
+nccl-default 1
+nccl-socket 0
+parallel-ep 1
+parallel-tp 1
